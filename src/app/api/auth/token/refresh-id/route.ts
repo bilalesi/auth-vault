@@ -1,13 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
-import { getTokenVault } from "@/lib/auth/token-vault-factory";
+import { NextRequest } from "next/server";
+import { GetStorage } from "@/lib/auth/token-vault-factory";
 import { validateRequest } from "@/lib/auth/validate-token";
-
-// Response schema
-const RefreshIdResponseSchema = z.object({
-  persistentTokenId: z.string().uuid(),
-  expiresAt: z.string().datetime(),
-});
+import { VaultTokenTypeDict } from "@/lib/auth/token-vault-interface";
+import { throwError, makeResponse, makeVaultError } from "@/lib/auth/response";
+import { VaultError, VaultErrorCodeDict } from "@/lib/auth/vault-errors";
 
 /**
  * POST /api/auth/token/refresh-id
@@ -30,43 +26,35 @@ export async function POST(request: NextRequest) {
     const validation = await validateRequest(request);
 
     if (!validation.valid || !validation.userId) {
-      return NextResponse.json(
-        { error: validation.error || "Unauthorized", code: "UNAUTHORIZED" },
-        { status: 401 }
+      return makeVaultError(
+        new VaultError(VaultErrorCodeDict.unauthorized, {
+          userId: validation.userId,
+        })
       );
     }
 
     // Get user's refresh token from vault
-    // The refresh token was stored during login with the user's ID
-    const tokenVault = getTokenVault();
-    const userTokens = await tokenVault.getUserTokens(validation.userId);
+    const vault = GetStorage();
+    const userTokens = await vault.getUserTokens(validation.userId);
 
     // Find the refresh token (not offline token)
     const refreshTokenEntry = userTokens.find(
-      (entry) => entry.tokenType === "refresh"
+      (entry) => entry.tokenType === VaultTokenTypeDict.Refresh
     );
 
     if (!refreshTokenEntry) {
-      return NextResponse.json(
-        {
-          error: "No refresh token available",
-          code: "NO_REFRESH_TOKEN",
-          message:
-            "Refresh token was not stored during login. Please log in again.",
-        },
-        { status: 404 }
+      return makeVaultError(
+        new VaultError(VaultErrorCodeDict.no_refresh_token, {
+          userId: validation.userId,
+        })
       );
     }
 
-    return NextResponse.json({
+    return makeResponse({
       persistentTokenId: refreshTokenEntry.id,
       expiresAt: refreshTokenEntry.expiresAt.toISOString(),
     });
   } catch (error) {
-    console.error("Refresh token ID request error:", error);
-    return NextResponse.json(
-      { error: "Internal server error", code: "INTERNAL_ERROR" },
-      { status: 500 }
-    );
+    return throwError(error);
   }
 }

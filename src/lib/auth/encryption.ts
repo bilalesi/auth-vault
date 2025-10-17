@@ -1,4 +1,127 @@
+/**
+ * Token Encryption Module
+ *
+ * This module provides secure encryption and decryption for OAuth tokens using AES-256-GCM.
+ *
+ * ## Overview
+ *
+ * AES-256-GCM (Galois/Counter Mode) is an authenticated encryption algorithm that provides:
+ * - **Confidentiality**: Data is encrypted and cannot be read without the key
+ * - **Integrity**: Any tampering with the encrypted data is detected
+ * - **Authentication**: Verifies the data hasn't been modified
+ *
+ * ## How It Works
+ *
+ * ### Encryption Process:
+ * 1. Generate a random Initialization Vector (IV) - 16 bytes
+ * 2. Use the encryption key (32 bytes for AES-256) from environment
+ * 3. Encrypt the plaintext token using AES-256-GCM
+ * 4. Generate an authentication tag (16 bytes) to verify integrity
+ * 5. Return encrypted data + auth tag as hex string
+ *
+ * ### Decryption Process:
+ * 1. Split the encrypted data into ciphertext and auth tag
+ * 2. Use the same encryption key and IV
+ * 3. Verify the auth tag (throws error if tampered)
+ * 4. Decrypt and return the plaintext token
+ *
+ * ## Security Features
+ *
+ * - **AES-256**: Industry-standard encryption with 256-bit keys
+ * - **GCM Mode**: Provides both encryption and authentication
+ * - **Unique IVs**: Each encryption uses a random IV (prevents pattern analysis)
+ * - **Auth Tags**: Detects any tampering or corruption
+ *
+ * ## Setup
+ *
+ * Generate an encryption key:
+ * ```bash
+ * openssl rand -hex 32
+ * ```
+ *
+ * Add to `.env.local`:
+ * ```
+ * TOKEN_VAULT_ENCRYPTION_KEY=your_64_character_hex_string
+ * ```
+ *
+ * ## Usage Examples
+ *
+ * ### Example 1: Encrypting a Token
+ * ```typescript
+ * import { encryptToken, generateIV } from '@/lib/auth/encryption';
+ *
+ * const token = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...";
+ * const iv = generateIV(); // Random 16-byte IV as hex string
+ *
+ * const encrypted = encryptToken(token, iv);
+ * // encrypted: "a3f2b1c4d5e6..." (hex string with auth tag)
+ *
+ * // Store both encrypted and iv in database
+ * await db.insert({ encryptedToken: encrypted, iv: iv });
+ * ```
+ *
+ * ### Example 2: Decrypting a Token
+ * ```typescript
+ * import { decryptToken } from '@/lib/auth/encryption';
+ *
+ * // Retrieve from database
+ * const { encryptedToken, iv } = await db.query(...);
+ *
+ * try {
+ *   const token = decryptToken(encryptedToken, iv);
+ *   // token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *
+ *   // Use the token
+ *   await keycloak.refreshAccessToken(token);
+ * } catch (error) {
+ *   // VaultError thrown if decryption fails
+ *   console.error('Decryption failed:', error);
+ * }
+ * ```
+ *
+ * ### Example 3: Complete Workflow
+ * ```typescript
+ * import { encryptToken, decryptToken, generateIV } from '@/lib/auth/encryption';
+ *
+ * // During login - encrypt and store
+ * const refreshToken = "eyJhbGciOiJSUzI1NiI...";
+ * const iv = generateIV();
+ * const encrypted = encryptToken(refreshToken, iv);
+ *
+ * await tokenVault.store({
+ *   userId: "user-123",
+ *   encryptedToken: encrypted,
+ *   iv: iv,
+ *   tokenType: "refresh"
+ * });
+ *
+ * // Later - retrieve and decrypt
+ * const entry = await tokenVault.retrieve("token-id");
+ * const decrypted = decryptToken(entry.encryptedToken, entry.iv);
+ *
+ * // Use decrypted token
+ * const newAccessToken = await keycloak.refreshAccessToken(decrypted);
+ * ```
+ *
+ * ## Error Handling
+ *
+ * All functions throw `VaultError` with specific error codes:
+ * - `encryption_failed`: Key missing, invalid format, or encryption error
+ * - `decryption_failed`: Invalid data, wrong key, or tampered data
+ *
+ * ## Important Notes
+ *
+ * 1. **Never reuse IVs**: Always generate a new IV for each encryption
+ * 2. **Store IVs**: The IV must be stored alongside encrypted data (it's not secret)
+ * 3. **Key rotation**: Plan for key rotation in production environments
+ * 4. **Auth tags**: The auth tag is appended to encrypted data automatically
+ * 5. **Hex encoding**: All data is encoded as hex strings for database storage
+ *
+ * @module encryption
+ */
+
 import { randomBytes, createCipheriv, createDecipheriv } from "crypto";
+import { VaultError, VaultErrorCodeDict } from "./vault-errors";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16; // 16 bytes for AES
@@ -7,34 +130,67 @@ const KEY_LENGTH = 32; // 32 bytes for AES-256
 
 /**
  * Get encryption key from environment
+ *
+ * Retrieves and validates the TOKEN_VAULT_ENCRYPTION_KEY from environment variables.
+ * The key must be a 64-character hex string (32 bytes).
+ *
+ * @returns Buffer containing the encryption key
+ * @throws {VaultError} If key is missing or invalid format
+ *
+ * @example
+ * ```typescript
+ * // Key is loaded from process.env.TOKEN_VAULT_ENCRYPTION_KEY
+ * const key = getEncryptionKey();
+ * // Returns: Buffer<32 bytes>
+ * ```
  */
 function getEncryptionKey(): Buffer {
   const key = process.env.TOKEN_VAULT_ENCRYPTION_KEY;
 
   if (!key) {
-    throw new Error(
-      "TOKEN_VAULT_ENCRYPTION_KEY environment variable is not set"
-    );
+    throw new VaultError(VaultErrorCodeDict.encryption_failed, {
+      reason: "TOKEN_VAULT_ENCRYPTION_KEY environment variable is not set",
+      operation: "getEncryptionKey",
+    });
   }
 
   // Convert hex string to buffer
   const keyBuffer = Buffer.from(key, "hex");
 
   if (keyBuffer.length !== KEY_LENGTH) {
-    throw new Error(
-      `Encryption key must be ${KEY_LENGTH} bytes (${
+    throw new VaultError(VaultErrorCodeDict.encryption_failed, {
+      reason: `Encryption key must be ${KEY_LENGTH} bytes (${
         KEY_LENGTH * 2
-      } hex characters). ` +
-        `Current key is ${keyBuffer.length} bytes. ` +
-        `Generate a new key with: openssl rand -hex 32`
-    );
+      } hex characters). Current key is ${keyBuffer.length} bytes.`,
+      hint: "Generate a new key with: openssl rand -hex 32",
+      operation: "getEncryptionKey",
+    });
   }
 
   return keyBuffer;
 }
 
 /**
- * Generate a random initialization vector
+ * Generate a random initialization vector (IV)
+ *
+ * Creates a cryptographically secure random 16-byte IV for use with AES-256-GCM.
+ * Each encryption operation MUST use a unique IV to ensure security.
+ *
+ * The IV is not secret and should be stored alongside the encrypted data.
+ *
+ * @returns 32-character hex string (16 bytes)
+ *
+ * @example
+ * ```typescript
+ * const iv = generateIV();
+ * // Returns: "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6" (32 hex chars)
+ *
+ * // Use with encryption
+ * const encrypted = encryptToken(token, iv);
+ *
+ * // Store both in database
+ * await db.insert({ encryptedToken: encrypted, iv: iv });
+ * ```
  */
 export function generateIV(): string {
   return randomBytes(IV_LENGTH).toString("hex");
@@ -42,9 +198,48 @@ export function generateIV(): string {
 
 /**
  * Encrypt a token using AES-256-GCM
- * @param token - The token to encrypt
- * @param iv - Initialization vector (hex string)
- * @returns Encrypted token (hex string with auth tag appended)
+ *
+ * Encrypts a plaintext token using AES-256-GCM encryption with the provided IV.
+ * The authentication tag is automatically appended to the encrypted data.
+ *
+ * **Security Notes:**
+ * - Always use a unique IV for each encryption (use `generateIV()`)
+ * - Never reuse an IV with the same key
+ * - The IV must be stored with the encrypted data for decryption
+ *
+ * @param token - The plaintext token to encrypt (typically a JWT refresh token)
+ * @param iv - Initialization vector as 32-character hex string (from `generateIV()`)
+ * @returns Encrypted token as hex string with auth tag appended
+ * @throws {VaultError} If encryption fails or IV is invalid
+ *
+ * @example
+ * ```typescript
+ * // Encrypt a refresh token
+ * const refreshToken = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...";
+ * const iv = generateIV();
+ *
+ * const encrypted = encryptToken(refreshToken, iv);
+ * // Returns: "a3f2b1c4d5e6f7a8b9c0d1e2f3a4b5c6..." (hex string)
+ *
+ * // Store in database
+ * await db.tokens.insert({
+ *   userId: "user-123",
+ *   encryptedToken: encrypted,
+ *   iv: iv,
+ *   createdAt: new Date()
+ * });
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Encrypt multiple tokens with unique IVs
+ * const tokens = ["token1", "token2", "token3"];
+ *
+ * const encrypted = tokens.map(token => ({
+ *   encrypted: encryptToken(token, generateIV()),
+ *   iv: generateIV()
+ * }));
+ * ```
  */
 export function encryptToken(token: string, iv: string): string {
   try {
@@ -52,7 +247,13 @@ export function encryptToken(token: string, iv: string): string {
     const ivBuffer = Buffer.from(iv, "hex");
 
     if (ivBuffer.length !== IV_LENGTH) {
-      throw new Error(`IV must be ${IV_LENGTH} bytes`);
+      throw new VaultError(VaultErrorCodeDict.encryption_failed, {
+        reason: `IV must be ${IV_LENGTH} bytes (${
+          IV_LENGTH * 2
+        } hex characters)`,
+        actualLength: ivBuffer.length,
+        operation: "encryptToken",
+      });
     }
 
     const cipher = createCipheriv(ALGORITHM, key, ivBuffer);
@@ -66,16 +267,75 @@ export function encryptToken(token: string, iv: string): string {
 
     return encrypted;
   } catch (error) {
+    if (VaultError.is(error)) {
+      throw error;
+    }
+
     console.error("Error encrypting token:", error);
-    throw new Error("Failed to encrypt token");
+    throw new VaultError(VaultErrorCodeDict.encryption_failed, {
+      originalError: error,
+      operation: "encryptToken",
+    });
   }
 }
 
 /**
  * Decrypt a token using AES-256-GCM
- * @param encryptedToken - The encrypted token (hex string with auth tag appended)
- * @param iv - Initialization vector (hex string)
- * @returns Decrypted token
+ *
+ * Decrypts an encrypted token using AES-256-GCM with the provided IV.
+ * The authentication tag is automatically verified during decryption.
+ *
+ * **Security Notes:**
+ * - If the auth tag verification fails, the data has been tampered with
+ * - Wrong key or IV will cause decryption to fail
+ * - Corrupted data will be detected by the auth tag
+ *
+ * @param encryptedToken - The encrypted token as hex string (with auth tag appended)
+ * @param iv - The same initialization vector used during encryption (32-char hex string)
+ * @returns Decrypted plaintext token
+ * @throws {VaultError} If decryption fails, auth tag invalid, or data tampered
+ *
+ * @example
+ * ```typescript
+ * // Retrieve encrypted token from database
+ * const entry = await db.tokens.findOne({ id: "token-123" });
+ *
+ * try {
+ *   const token = decryptToken(entry.encryptedToken, entry.iv);
+ *   // Returns: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *
+ *   // Use the decrypted token
+ *   const response = await keycloak.refreshAccessToken(token);
+ *   console.log('New access token:', response.access_token);
+ * } catch (error) {
+ *   if (error.code === 'decryption_failed') {
+ *     console.error('Token corrupted or tampered');
+ *     await db.tokens.delete({ id: "token-123" });
+ *   }
+ * }
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Decrypt and validate token
+ * async function getValidToken(tokenId: string) {
+ *   const entry = await tokenVault.retrieve(tokenId);
+ *
+ *   if (!entry) {
+ *     throw new Error('Token not found');
+ *   }
+ *
+ *   // Decrypt the token
+ *   const token = decryptToken(entry.encryptedToken, entry.iv);
+ *
+ *   // Check expiration
+ *   if (isExpired(entry.expiresAt)) {
+ *     throw new Error('Token expired');
+ *   }
+ *
+ *   return token;
+ * }
+ * ```
  */
 export function decryptToken(encryptedToken: string, iv: string): string {
   try {
@@ -83,13 +343,28 @@ export function decryptToken(encryptedToken: string, iv: string): string {
     const ivBuffer = Buffer.from(iv, "hex");
 
     if (ivBuffer.length !== IV_LENGTH) {
-      throw new Error(`IV must be ${IV_LENGTH} bytes`);
+      throw new VaultError(VaultErrorCodeDict.decryption_failed, {
+        reason: `IV must be ${IV_LENGTH} bytes (${
+          IV_LENGTH * 2
+        } hex characters)`,
+        actualLength: ivBuffer.length,
+        operation: "decryptToken",
+      });
     }
 
     // Extract the auth tag from the end of the encrypted data
     const authTagStart = encryptedToken.length - AUTH_TAG_LENGTH * 2; // 2 hex chars per byte
     const encryptedData = encryptedToken.slice(0, authTagStart);
     const authTag = Buffer.from(encryptedToken.slice(authTagStart), "hex");
+
+    if (authTag.length !== AUTH_TAG_LENGTH) {
+      throw new VaultError(VaultErrorCodeDict.decryption_failed, {
+        reason: "Invalid auth tag length - data may be corrupted",
+        expectedLength: AUTH_TAG_LENGTH,
+        actualLength: authTag.length,
+        operation: "decryptToken",
+      });
+    }
 
     const decipher = createDecipheriv(ALGORITHM, key, ivBuffer);
     decipher.setAuthTag(authTag);
@@ -99,20 +374,64 @@ export function decryptToken(encryptedToken: string, iv: string): string {
 
     return decrypted;
   } catch (error) {
+    if (VaultError.is(error)) {
+      throw error;
+    }
+
     console.error("Error decrypting token:", error);
-    throw new Error("Failed to decrypt token");
+    throw new VaultError(VaultErrorCodeDict.decryption_failed, {
+      originalError: error,
+      operation: "decryptToken",
+      hint: "Data may be corrupted, tampered with, or encrypted with a different key",
+    });
   }
 }
 
 /**
  * Validate encryption key format
- * @returns true if valid, throws error if invalid
+ *
+ * Checks if the TOKEN_VAULT_ENCRYPTION_KEY environment variable is set
+ * and has the correct format (64 hex characters = 32 bytes).
+ *
+ * Useful for startup validation to fail fast if configuration is wrong.
+ *
+ * @returns true if valid
+ * @throws {VaultError} If key is missing or invalid format
+ *
+ * @example
+ * ```typescript
+ * // Validate at application startup
+ * try {
+ *   validateEncryptionKey();
+ *   console.log('✓ Encryption key is valid');
+ * } catch (error) {
+ *   console.error('✗ Invalid encryption key:', error.message);
+ *   process.exit(1);
+ * }
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Use in health check endpoint
+ * export async function GET() {
+ *   const checks = {
+ *     database: await checkDatabase(),
+ *     redis: await checkRedis(),
+ *     encryption: false
+ *   };
+ *
+ *   try {
+ *     validateEncryptionKey();
+ *     checks.encryption = true;
+ *   } catch (error) {
+ *     console.error('Encryption key invalid:', error);
+ *   }
+ *
+ *   return Response.json(checks);
+ * }
+ * ```
  */
 export function validateEncryptionKey(): boolean {
-  try {
-    getEncryptionKey();
-    return true;
-  } catch (error) {
-    throw error;
-  }
+  getEncryptionKey();
+  return true;
 }

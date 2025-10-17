@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
+import { StatusCodes } from "http-status-codes";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/auth";
 import { getToken } from "next-auth/jwt";
-import { cookies } from "next/headers";
 
 /**
  * Test endpoint to inspect token refresh response shape
@@ -12,7 +12,10 @@ export async function GET(request: Request) {
     const session = await getServerSession(authOptions);
 
     if (!session) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Not authenticated" },
+        { status: StatusCodes.UNAUTHORIZED }
+      );
     }
 
     // Get the JWT token which contains the refresh token (server-side only)
@@ -73,11 +76,11 @@ export async function GET(request: Request) {
       };
     }
 
-    return NextResponse.json(results, { status: 200 });
+    return NextResponse.json(results, { status: StatusCodes.OK });
   } catch (error: any) {
     return NextResponse.json(
       { error: error.message, stack: error.stack },
-      { status: 500 }
+      { status: StatusCodes.INTERNAL_SERVER_ERROR }
     );
   }
 }

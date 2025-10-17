@@ -1,3 +1,23 @@
+import { VaultError, VaultErrorCodeDict } from "./vault-errors";
+
+/**
+ * Keycloak Client Operations Dictionary
+ *
+ * Centralized dictionary of all operation names used in the Keycloak client.
+ * This ensures consistency in error reporting and logging.
+ */
+export const KeycloakOperationDict = {
+  refreshAccessToken: "refreshAccessToken",
+  requestOfflineToken: "requestOfflineToken",
+  offlineTokenRefresh: "offlineTokenRefresh",
+  revokeToken: "revokeToken",
+  introspectToken: "introspectToken",
+  getUserInfo: "getUserInfo",
+} as const;
+
+export type KeycloakOperation =
+  (typeof KeycloakOperationDict)[keyof typeof KeycloakOperationDict];
+
 /**
  * Keycloak Configuration
  */
@@ -22,6 +42,7 @@ export interface TokenResponse {
   token_type: string;
   id_token?: string;
   scope?: string;
+  session_state: string;
 }
 
 /**
@@ -141,17 +162,26 @@ export class KeycloakClient {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(
-          `Failed to refresh token: ${
+        throw new VaultError(VaultErrorCodeDict.keycloak_error, {
+          reason: `Failed to refresh token: ${
             error.error_description || error.error || response.statusText
-          }`
-        );
+          }`,
+          status: response.status,
+          keycloakError: error.error,
+          operation: KeycloakOperationDict.refreshAccessToken,
+        });
       }
 
       return await response.json();
     } catch (error) {
+      if (VaultError.is(error)) {
+        throw error;
+      }
       console.error("Error refreshing access token:", error);
-      throw error;
+      throw new VaultError(VaultErrorCodeDict.keycloak_error, {
+        originalError: error,
+        operation: KeycloakOperationDict.refreshAccessToken,
+      });
     }
   }
 
@@ -173,17 +203,21 @@ export class KeycloakClient {
           client_secret: this.config.clientSecret,
           grant_type: "refresh_token",
           refresh_token: refreshToken,
+          response_type: "code",
           scope: "openid profile email offline_access", // Explicitly request offline_access
         }),
       });
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(
-          `Failed to request offline token: ${
+        throw new VaultError(VaultErrorCodeDict.keycloak_error, {
+          reason: `Failed to request offline token: ${
             error.error_description || error.error || response.statusText
-          }`
-        );
+          }`,
+          status: response.status,
+          keycloakError: error.error,
+          operation: KeycloakOperationDict.requestOfflineToken,
+        });
       }
 
       const tokenResponse = await response.json();
@@ -191,8 +225,14 @@ export class KeycloakClient {
       // The refresh_token in the response is now an offline token (long-lived)
       return tokenResponse;
     } catch (error) {
+      if (VaultError.is(error)) {
+        throw error;
+      }
       console.error("Error requesting offline token:", error);
-      throw error;
+      throw new VaultError(VaultErrorCodeDict.keycloak_error, {
+        originalError: error,
+        operation: KeycloakOperationDict.requestOfflineToken,
+      });
     }
   }
 
@@ -232,13 +272,22 @@ export class KeycloakClient {
 
       if (!response.ok) {
         const error = await response.text();
-        throw new Error(
-          `Failed to revoke token: ${error || response.statusText}`
-        );
+        throw new VaultError(VaultErrorCodeDict.keycloak_error, {
+          reason: `Failed to revoke token: ${error || response.statusText}`,
+          status: response.status,
+          tokenTypeHint,
+          operation: KeycloakOperationDict.revokeToken,
+        });
       }
     } catch (error) {
+      if (VaultError.is(error)) {
+        throw error;
+      }
       console.error("Error revoking token:", error);
-      throw error;
+      throw new VaultError(VaultErrorCodeDict.keycloak_error, {
+        originalError: error,
+        operation: KeycloakOperationDict.revokeToken,
+      });
     }
   }
 
@@ -261,17 +310,26 @@ export class KeycloakClient {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(
-          `Failed to introspect token: ${
+        throw new VaultError(VaultErrorCodeDict.token_introspection_failed, {
+          reason: `Failed to introspect token: ${
             error.error_description || error.error || response.statusText
-          }`
-        );
+          }`,
+          status: response.status,
+          keycloakError: error.error,
+          operation: KeycloakOperationDict.introspectToken,
+        });
       }
 
       return await response.json();
     } catch (error) {
+      if (VaultError.is(error)) {
+        throw error;
+      }
       console.error("Error introspecting token:", error);
-      throw error;
+      throw new VaultError(VaultErrorCodeDict.token_introspection_failed, {
+        originalError: error,
+        operation: KeycloakOperationDict.introspectToken,
+      });
     }
   }
 
@@ -289,15 +347,23 @@ export class KeycloakClient {
 
       if (!response.ok) {
         const error = await response.text();
-        throw new Error(
-          `Failed to get user info: ${error || response.statusText}`
-        );
+        throw new VaultError(VaultErrorCodeDict.keycloak_error, {
+          reason: `Failed to get user info: ${error || response.statusText}`,
+          status: response.status,
+          operation: KeycloakOperationDict.getUserInfo,
+        });
       }
 
       return await response.json();
     } catch (error) {
+      if (VaultError.is(error)) {
+        throw error;
+      }
       console.error("Error getting user info:", error);
-      throw error;
+      throw new VaultError(VaultErrorCodeDict.keycloak_error, {
+        originalError: error,
+        operation: KeycloakOperationDict.getUserInfo,
+      });
     }
   }
 }

@@ -9,6 +9,18 @@ export const VaultErrorCodeDict = {
   invalid_token_id: "invalid_token_id",
   connection_error: "connection_error",
   cleanup_error: "cleanup_error",
+  internal_error: "internal_error",
+  no_refresh_token: "no_refresh_token",
+  invalid_request: "invalid_request",
+  unauthorized: "unauthorized",
+  token_expired: "token_expired",
+  forbidden: "forbidden",
+  invalid_token_type: "invalid_token_type",
+  keycloak_error: "keycloak_error",
+  missing_bearer_token: "missing_bearer_token",
+  invalid_bearer_token: "invalid_bearer_token",
+  token_introspection_failed: "token_introspection_failed",
+  token_not_active: "token_not_active",
 } as const;
 
 /**
@@ -27,6 +39,8 @@ export const VaultOperationDict = {
   cleanup: "cleanup",
   get_user_tokens: "get_user_tokens",
   initialize: "initialize",
+  validate_token: "validate_token",
+  introspect_token: "introspect_token",
 } as const;
 
 /**
@@ -60,6 +74,19 @@ export const VaultErrorMessageDict: Record<VaultErrorCode, string> = {
   [VaultErrorCodeDict.invalid_token_id]: "invalid token id",
   [VaultErrorCodeDict.connection_error]: "failed to connect to storage",
   [VaultErrorCodeDict.cleanup_error]: "failed to cleanup expired tokens",
+  [VaultErrorCodeDict.internal_error]: "internal server error",
+  [VaultErrorCodeDict.no_refresh_token]: "no refresh token available",
+  [VaultErrorCodeDict.invalid_request]: "invalid request",
+  [VaultErrorCodeDict.unauthorized]: "unauthorized",
+  [VaultErrorCodeDict.token_expired]: "token expired",
+  [VaultErrorCodeDict.forbidden]: "forbidden",
+  [VaultErrorCodeDict.invalid_token_type]: "invalid token type",
+  [VaultErrorCodeDict.keycloak_error]: "keycloak error",
+  [VaultErrorCodeDict.missing_bearer_token]:
+    "missing or invalid authorization header",
+  [VaultErrorCodeDict.invalid_bearer_token]: "invalid bearer token format",
+  [VaultErrorCodeDict.token_introspection_failed]: "failed to introspect token",
+  [VaultErrorCodeDict.token_not_active]: "token is not active",
 };
 
 /**
@@ -115,7 +142,7 @@ export class VaultError extends Error {
   toJSON(): Record<string, unknown> {
     return {
       name: this.name,
-      message: this.message,
+      message: this.msg,
       code: this.code,
       metadata: this.metadata,
       timestamp: this.timestamp.toISOString(),
@@ -126,14 +153,14 @@ export class VaultError extends Error {
   /**
    * Get a user-friendly error message
    */
-  getUserMessage(): string {
+  msg(): string {
     return VaultErrorMessageDict[this.code];
   }
 
   /**
    * Check if an error is a VaultError
    */
-  static isVaultError(error: unknown): error is VaultError {
+  static is(error: unknown): error is VaultError {
     return error instanceof VaultError;
   }
 }

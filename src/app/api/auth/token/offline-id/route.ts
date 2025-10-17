@@ -1,20 +1,17 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { z } from "zod";
 import { getKeycloakClient } from "@/lib/auth/keycloak-client";
-import { getTokenVault } from "@/lib/auth/token-vault-factory";
+import { GetStorage } from "@/lib/auth/token-vault-factory";
 import { decryptToken } from "@/lib/auth/encryption";
 import { validateRequest } from "@/lib/auth/validate-token";
+import { VaultTokenTypeDict } from "@/lib/auth/token-vault-interface";
+import { makeResponse, makeVaultError, throwError } from "@/lib/auth/response";
+import { getExpirationDate, TokenExpirationDict } from "@/lib/auth/date-utils";
+import { VaultError, VaultErrorCodeDict } from "@/lib/auth/vault-errors";
 
 // Request schema
 const OfflineTokenRequestSchema = z.object({
   redirectUri: z.string().url().optional(),
-});
-
-// Response schemas
-const OfflineTokenResponseSchema = z.object({
-  persistentTokenId: z.string().uuid().optional(),
-  consentUrl: z.string().url().optional(),
-  expiresAt: z.string().datetime().optional(),
 });
 
 /**
@@ -31,9 +28,10 @@ export async function POST(request: NextRequest) {
     const validation = await validateRequest(request);
 
     if (!validation.valid || !validation.userId) {
-      return NextResponse.json(
-        { error: validation.error || "Unauthorized", code: "UNAUTHORIZED" },
-        { status: 401 }
+      return makeVaultError(
+        new VaultError(VaultErrorCodeDict.unauthorized, {
+          userId: validation.userId,
+        })
       );
     }
 
@@ -45,17 +43,19 @@ export async function POST(request: NextRequest) {
     const keycloakClient = getKeycloakClient();
 
     // Get the user's refresh token from the vault
-    // We need to find the refresh token for this user
-    const tokenVault = getTokenVault();
-    const userTokens = await tokenVault.getUserTokens(validation.userId);
+    const vault = GetStorage();
+    const userTokens = await vault.getUserTokens(validation.userId);
 
     // Find the refresh token (not offline token)
-    const refreshTokenEntry = userTokens.find((t) => t.tokenType === "refresh");
+    const refreshTokenEntry = userTokens.find(
+      (t) => t.tokenType === VaultTokenTypeDict.Refresh
+    );
 
     if (!refreshTokenEntry) {
-      return NextResponse.json(
-        { error: "No refresh token available", code: "NO_REFRESH_TOKEN" },
-        { status: 400 }
+      return makeVaultError(
+        new VaultError(VaultErrorCodeDict.no_refresh_token, {
+          userId: validation.userId,
+        })
       );
     }
 
@@ -73,15 +73,15 @@ export async function POST(request: NextRequest) {
 
       // If we have an offline token, store it in the vault
       if (offlineTokenResponse.refresh_token) {
-        const tokenVault = getTokenVault();
+        const tokenVault = GetStorage();
 
-        // Calculate expiration (10 days for offline tokens)
-        const expiresAt = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+        // Calculate expiration for offline tokens
+        const expiresAt = getExpirationDate(TokenExpirationDict.offline);
 
         const persistentTokenId = await tokenVault.store(
           validation.userId,
           offlineTokenResponse.refresh_token,
-          "offline",
+          VaultTokenTypeDict.Offline,
           expiresAt,
           {
             email: validation.email,
@@ -90,21 +90,22 @@ export async function POST(request: NextRequest) {
           }
         );
 
-        console.log("Offline token stored in vault:", persistentTokenId);
+        console.log("offline token stored in vault:", persistentTokenId);
 
-        return NextResponse.json({
+        return makeResponse({
           persistentTokenId,
           expiresAt: expiresAt.toISOString(),
         });
       }
 
       // Unexpected response
-      return NextResponse.json(
-        { error: "Failed to obtain offline token", code: "KEYCLOAK_ERROR" },
-        { status: 500 }
+      return makeVaultError(
+        new VaultError(VaultErrorCodeDict.keycloak_error, {
+          userId: validation.userId,
+        })
       );
     } catch (error: any) {
-      console.error("Error requesting offline token:", error);
+      console.error("error requesting offline token:", error);
 
       // Check if it's a consent required error
       if (
@@ -122,33 +123,18 @@ export async function POST(request: NextRequest) {
               `${process.env.NEXTAUTH_URL}/api/auth/callback/keycloak`
           )}`;
 
-        return NextResponse.json({
-          consentUrl,
-        });
+        return makeResponse({ consentUrl });
       }
 
-      return NextResponse.json(
-        { error: "Failed to request offline token", code: "KEYCLOAK_ERROR" },
-        { status: 500 }
+      return makeVaultError(
+        new VaultError(VaultErrorCodeDict.keycloak_error, {
+          userId: validation.userId,
+          originalError: error,
+        })
       );
     }
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        {
-          error: "Invalid request body",
-          code: "INVALID_REQUEST",
-          details: error.issues,
-        },
-        { status: 400 }
-      );
-    }
-
-    console.error("Offline token request error:", error);
-    return NextResponse.json(
-      { error: "Internal server error", code: "INTERNAL_ERROR" },
-      { status: 500 }
-    );
+    return throwError(error);
   }
 }
 
@@ -168,9 +154,10 @@ export async function DELETE(request: NextRequest) {
     const validation = await validateRequest(request);
 
     if (!validation.valid || !validation.userId) {
-      return NextResponse.json(
-        { error: validation.error || "Unauthorized", code: "UNAUTHORIZED" },
-        { status: 401 }
+      return makeVaultError(
+        new VaultError(VaultErrorCodeDict.unauthorized, {
+          userId: validation.userId,
+        })
       );
     }
 
@@ -182,29 +169,33 @@ export async function DELETE(request: NextRequest) {
     const { persistentTokenId } = RevokeTokenRequestSchema.parse(body);
 
     // Retrieve token from vault
-    const tokenVault = getTokenVault();
+    const tokenVault = GetStorage();
     const tokenEntry = await tokenVault.retrieve(persistentTokenId);
 
     if (!tokenEntry) {
-      return NextResponse.json(
-        { error: "Token not found", code: "TOKEN_NOT_FOUND" },
-        { status: 404 }
+      return makeVaultError(
+        new VaultError(VaultErrorCodeDict.token_not_found, {
+          persistentTokenId,
+        })
       );
     }
 
     // Verify the token belongs to the authenticated user
     if (tokenEntry.userId !== validation.userId) {
-      return NextResponse.json(
-        { error: "Unauthorized to revoke this token", code: "FORBIDDEN" },
-        { status: 403 }
+      return makeVaultError(
+        new VaultError(VaultErrorCodeDict.forbidden, {
+          userId: validation.userId,
+          persistentTokenId,
+        })
       );
     }
 
     // Only allow revoking offline tokens (not refresh tokens)
-    if (tokenEntry.tokenType !== "offline") {
-      return NextResponse.json(
-        { error: "Can only revoke offline tokens", code: "INVALID_TOKEN_TYPE" },
-        { status: 400 }
+    if (tokenEntry.tokenType !== VaultTokenTypeDict.Offline) {
+      return makeVaultError(
+        new VaultError(VaultErrorCodeDict.invalid_token_type, {
+          persistentTokenId,
+        })
       );
     }
 
@@ -225,28 +216,13 @@ export async function DELETE(request: NextRequest) {
 
     // Delete from vault
     await tokenVault.delete(persistentTokenId);
-    console.log("Token deleted from vault:", persistentTokenId);
+    console.log("token deleted from vault:", persistentTokenId);
 
-    return NextResponse.json({
+    return makeResponse({
       success: true,
-      message: "Offline token revoked successfully",
+      message: "offline token revoked successfully",
     });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        {
-          error: "Invalid request body",
-          code: "INVALID_REQUEST",
-          details: error.issues,
-        },
-        { status: 400 }
-      );
-    }
-
-    console.error("Token revocation error:", error);
-    return NextResponse.json(
-      { error: "Internal server error", code: "INTERNAL_ERROR" },
-      { status: 500 }
-    );
+    return throwError(error);
   }
 }

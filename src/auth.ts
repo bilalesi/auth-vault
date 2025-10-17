@@ -52,6 +52,8 @@ import {
   NextApiRequest,
   NextApiResponse,
 } from "next";
+import { getExpirationDate, TokenExpirationDict } from "@/lib/auth/date-utils";
+import ms from "ms";
 
 const issuer = process.env.KEYCLOAK_ISSUER!;
 const clientId = process.env.KEYCLOAK_CLIENT_ID!;
@@ -99,7 +101,7 @@ export async function refreshAccessToken(token: TokenSet): Promise<TokenSet> {
       token.user?.id
     ) {
       try {
-        const { getTokenVault } = await import(
+        const { GetStorage: getTokenVault } = await import(
           "@/lib/auth/token-vault-factory"
         );
         const tokenVault = getTokenVault();
@@ -107,8 +109,8 @@ export async function refreshAccessToken(token: TokenSet): Promise<TokenSet> {
         // Delete old token and store new one with same persistentTokenId
         await tokenVault.delete(token.persistentTokenId);
 
-        // Calculate new expiration (12 hours for refresh tokens)
-        const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000);
+        // Calculate new expiration for refresh tokens
+        const expiresAt = getExpirationDate(TokenExpirationDict.refresh);
 
         // Store with the same persistentTokenId to maintain consistency
         await tokenVault.store(
@@ -196,13 +198,13 @@ export const authOptions: NextAuthOptions = {
         // Store refresh token in Token Vault for external services
         if (account.refresh_token && profile?.sub) {
           try {
-            const { getTokenVault } = await import(
+            const { GetStorage: getTokenVault } = await import(
               "@/lib/auth/token-vault-factory"
             );
             const tokenVault = getTokenVault();
 
-            // Calculate expiration (12 hours for refresh tokens)
-            const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000);
+            // Calculate expiration for refresh tokens
+            const expiresAt = getExpirationDate(TokenExpirationDict.refresh);
 
             const persistentTokenId = await tokenVault.store(
               profile.sub,
@@ -227,9 +229,10 @@ export const authOptions: NextAuthOptions = {
       }
 
       // Return previous token if the access token has not expired / is not close to expiration yet.
+      // Refresh proactively 2 minutes before expiration
       if (
         typeof token.accessTokenExpires === "number" &&
-        Date.now() < token.accessTokenExpires - 2 * 60 * 1000
+        Date.now() < token.accessTokenExpires - ms("2m")
       ) {
         return token;
       }
@@ -253,7 +256,7 @@ export const authOptions: NextAuthOptions = {
   },
   session: {
     strategy: "jwt",
-    maxAge: 10 * 60 * 60, // 10 hours
+    maxAge: ms("10h") / 1000, // 10 hours in seconds
   },
   pages: {
     signIn: "/auth/signin",

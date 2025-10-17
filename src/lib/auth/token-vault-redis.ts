@@ -1,6 +1,6 @@
 import Redis from "ioredis";
 import type {
-  TokenVault,
+  IStorage,
   TokenVaultEntry,
   VaultTokenType,
 } from "./token-vault-interface";
@@ -12,6 +12,7 @@ import {
   VaultOperationDict,
   VaultStorageTypeDict,
 } from "./vault-errors";
+import { getTTLSeconds, isExpired } from "./date-utils";
 
 /**
  * Redis Token Vault Entry (stored in Redis)
@@ -72,7 +73,7 @@ function getRedisClient(): Redis {
 /**
  * Redis implementation of TokenVault using ioredis
  */
-export class RedisTokenVault implements TokenVault {
+export class RedisStorage implements IStorage {
   private redis: Redis;
 
   constructor() {
@@ -121,10 +122,7 @@ export class RedisTokenVault implements TokenVault {
       const userTokensKey = this.getUserTokensKey(userId);
 
       // Calculate TTL in seconds
-      const ttl = Math.max(
-        Math.floor((expiresAt.getTime() - Date.now()) / 1000),
-        1
-      );
+      const ttl = getTTLSeconds(expiresAt);
 
       // Store token with TTL
       await this.redis.setex(tokenKey, ttl, JSON.stringify(entry));
@@ -158,7 +156,7 @@ export class RedisTokenVault implements TokenVault {
 
       // Check if token has expired
       const expiresAt = new Date(entry.expiresAt);
-      if (expiresAt < new Date()) {
+      if (isExpired(expiresAt)) {
         await this.delete(tokenId);
         return null;
       }

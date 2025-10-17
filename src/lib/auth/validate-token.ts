@@ -1,5 +1,10 @@
 import { NextRequest } from "next/server";
 import { getKeycloakClient } from "./keycloak-client";
+import {
+  VaultError,
+  VaultErrorCodeDict,
+  VaultOperationDict,
+} from "./vault-errors";
 
 /**
  * Extract Bearer token from Authorization header
@@ -21,13 +26,12 @@ export function extractBearerToken(request: NextRequest): string | null {
 
 /**
  * Validate access token with Keycloak and return user info
+ * @throws {VaultError} if token is invalid or validation fails
  */
 export async function validateAccessToken(accessToken: string): Promise<{
-  valid: boolean;
-  userId?: string;
+  userId: string;
   email?: string;
   username?: string;
-  error?: string;
 }> {
   try {
     const keycloakClient = getKeycloakClient();
@@ -36,32 +40,35 @@ export async function validateAccessToken(accessToken: string): Promise<{
     const introspection = await keycloakClient.introspectToken(accessToken);
 
     if (!introspection.active) {
-      return {
-        valid: false,
-        error: "Token is not active",
-      };
+      throw new VaultError(VaultErrorCodeDict.token_not_active, {
+        operation: VaultOperationDict.introspect_token,
+      });
     }
 
     // Get user info from the token
     const userInfo = await keycloakClient.getUserInfo(accessToken);
 
     return {
-      valid: true,
       userId: userInfo.sub,
       email: userInfo.email,
       username: userInfo.preferred_username,
     };
   } catch (error) {
-    console.error("Error validating access token:", error);
-    return {
-      valid: false,
-      error: "Failed to validate token",
-    };
+    if (VaultError.is(error)) {
+      throw error;
+    }
+
+    console.error("error validating access token:", error);
+    throw new VaultError(VaultErrorCodeDict.token_introspection_failed, {
+      operation: VaultOperationDict.introspect_token,
+      originalError: error,
+    });
   }
 }
 
 /**
  * Middleware helper to validate Bearer token from request
+ * Returns validation result with error info instead of throwing
  */
 export async function validateRequest(request: NextRequest): Promise<{
   valid: boolean;
@@ -71,23 +78,34 @@ export async function validateRequest(request: NextRequest): Promise<{
   accessToken?: string;
   error?: string;
 }> {
-  const accessToken = extractBearerToken(request);
+  try {
+    const accessToken = extractBearerToken(request);
 
-  if (!accessToken) {
+    if (!accessToken) {
+      return {
+        valid: false,
+        error: "missing or invalid authorization header",
+      };
+    }
+
+    const userInfo = await validateAccessToken(accessToken);
+
+    return {
+      valid: true,
+      ...userInfo,
+      accessToken,
+    };
+  } catch (error) {
+    if (VaultError.is(error)) {
+      return {
+        valid: false,
+        error: error.msg(),
+      };
+    }
+
     return {
       valid: false,
-      error: "Missing or invalid Authorization header",
+      error: error instanceof Error ? error.message : "validation failed",
     };
   }
-
-  const validation = await validateAccessToken(accessToken);
-
-  if (!validation.valid) {
-    return validation;
-  }
-
-  return {
-    ...validation,
-    accessToken,
-  };
 }

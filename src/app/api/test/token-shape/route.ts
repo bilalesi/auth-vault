@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { StatusCodes } from "http-status-codes";
 import { auth } from "@/auth";
 import { getKeycloakClient } from "@/lib/auth/keycloak-client";
 
@@ -11,7 +12,10 @@ export async function GET() {
     const session = await auth();
 
     if (!session) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Not authenticated" },
+        { status: StatusCodes.UNAUTHORIZED }
+      );
     }
 
     const keycloakClient = getKeycloakClient();
@@ -65,11 +69,11 @@ export async function GET() {
     // Note: This is read from the JWT token on the server side
     // We can't directly access it here, but we can test the endpoint structure
 
-    return NextResponse.json(results, { status: 200 });
+    return NextResponse.json(results, { status: StatusCodes.OK });
   } catch (error: any) {
     return NextResponse.json(
       { error: error.message, stack: error.stack },
-      { status: 500 }
+      { status: StatusCodes.INTERNAL_SERVER_ERROR }
     );
   }
 }

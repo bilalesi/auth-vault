@@ -2,8 +2,8 @@
  * Token type dictionary
  */
 export const VaultTokenTypeDict = {
-  refresh: "refresh",
-  offline: "offline",
+  Refresh: "refresh",
+  Offline: "offline",
 } as const;
 
 /**
@@ -31,7 +31,7 @@ export interface TokenVaultEntry {
  * Token Vault Interface
  * Abstract interface for token storage implementations
  */
-export interface TokenVault {
+export interface IStorage {
   /**
    * Store a token in the vault
    * @param userId - User ID

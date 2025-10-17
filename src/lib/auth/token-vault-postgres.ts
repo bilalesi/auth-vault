@@ -2,7 +2,7 @@ import { eq, lt } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { tokenVault } from "@/lib/db/schema";
 import type {
-  TokenVault,
+  IStorage,
   TokenVaultEntry,
   VaultTokenType,
 } from "./token-vault-interface";
@@ -14,11 +14,12 @@ import {
   VaultOperationDict,
   VaultStorageTypeDict,
 } from "./vault-errors";
+import { isExpired } from "./date-utils";
 
 /**
  * PostgreSQL implementation of TokenVault using Drizzle ORM
  */
-export class PostgresTokenVault implements TokenVault {
+export class PgStorage implements IStorage {
   private db = getDb();
 
   async store(
@@ -76,7 +77,7 @@ export class PostgresTokenVault implements TokenVault {
       const row = result[0];
 
       // Check if token has expired
-      if (row.expiresAt < new Date()) {
+      if (isExpired(row.expiresAt)) {
         // Delete expired token
         await this.delete(tokenId);
         return null;
@@ -143,7 +144,7 @@ export class PostgresTokenVault implements TokenVault {
         .where(eq(tokenVault.userId, userId));
 
       return results
-        .filter((row) => row.expiresAt >= new Date()) // Filter out expired
+        .filter((row) => !isExpired(row.expiresAt)) // Filter out expired
         .map((row) => ({
           id: row.id,
           userId: row.userId,

@@ -1,6 +1,6 @@
-import type { TokenVault } from "./token-vault-interface";
-import { PostgresTokenVault } from "./token-vault-postgres";
-import { RedisTokenVault } from "./token-vault-redis";
+import type { IStorage } from "./token-vault-interface";
+import { PgStorage } from "./token-vault-postgres";
+import { RedisStorage } from "./token-vault-redis";
 import { match } from "ts-pattern";
 import {
   VaultError,
@@ -25,7 +25,7 @@ export type StorageType =
 /**
  * Token Vault singleton instance
  */
-let tokenVaultInstance: TokenVault | null = null;
+let tokenVaultInstance: IStorage | null = null;
 
 /**
  * Create or get Token Vault instance based on configuration
@@ -33,7 +33,7 @@ let tokenVaultInstance: TokenVault | null = null;
  *
  * @returns TokenVault instance (PostgreSQL or Redis)
  */
-export function getTokenVault(): TokenVault {
+export function GetStorage(): IStorage {
   if (tokenVaultInstance) {
     return tokenVaultInstance;
   }
@@ -42,30 +42,22 @@ export function getTokenVault(): TokenVault {
 
   if (!storageType) {
     throw new VaultError(VaultErrorCodeDict.connection_error, {
-      operation: "initialize",
+      operation: VaultOperationDict.initialize,
     });
   }
 
   return (tokenVaultInstance = match({ storageType })
     .with({ storageType: StorageTypeDict.pg }, () => {
       console.log("Using PostgreSQL Token Vault");
-      return new PostgresTokenVault();
+      return new PgStorage();
     })
     .with({ storageType: StorageTypeDict.redis }, () => {
       console.log("Using Redis Token Vault");
-      return new RedisTokenVault();
+      return new RedisStorage();
     })
     .otherwise(() => {
       throw new VaultError(VaultErrorCodeDict.connection_error, {
-        operation: "initialize",
-        storageType,
+        operation: VaultOperationDict.initialize,
       });
     }));
-}
-
-/**
- * Reset the token vault instance (useful for testing)
- */
-export function resetTokenVault(): void {
-  tokenVaultInstance = null;
 }
