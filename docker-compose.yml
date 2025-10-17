@@ -1,0 +1,88 @@
+services:
+  postgres:
+    image: postgres:16
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    networks:
+      - keycloak_network
+
+  # variables from ./.env file
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    platform: linux/amd64
+    command: start --spi-theme-static-max-age=-1 --spi-theme-cache-themes=false --spi-theme-cache-templates=false -Dkeycloak.profile.feature.admin_fine_grained_authz=enabled
+    #command: start --spi-theme-static-max-age=-1 --spi-theme-cache-themes=false --spi-theme-cache-templates=false
+    environment:
+      KC_HTTP_ENABLED: true
+      KC_HEALTH_ENABLED: true
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KC_HOSTNAME_STRICT: false
+      KC_HOSTNAME_STRICT_HTTPS: false
+      KC_HTTP_PORT: "8081"
+      KC_HOSTNAME_URL: "http://localhost:8081/auth"
+      KC_HOSTNAME_ADMIN_URL: "http://localhost:8081/auth"
+      KC_PROXY_HEADERS: xforwarded
+      KC_METRICS_ENABLED: true
+      KC_EVENT_METRICS_USER_ENABLED: false
+      KC_HTTP_METRICS_HISTOGRAMS_ENABLED: false
+      KC_CACHE_METRICS_HISTOGRAMS_ENABLED: false
+      JAVA_OPTS_APPEND: "-Xms512m -Xmx2g"
+      PROXY_ADDRESS_FORWARDING: true
+      KC_HTTP_RELATIVE_PATH: "/auth"
+
+    ports:
+      - 8081:8081
+      - 9000:9000
+    restart: always
+    depends_on:
+      - postgres
+    networks:
+      - keycloak_network
+  db:
+    image: postgres
+    restart: always
+    shm_size: 128mb
+    ports:
+      - "127.0.0.1:5433:5432"
+    environment:
+      POSTGRES_USER: vault
+      POSTGRES_PASSWORD: vault
+      POSTGRES_DB: vault
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./data:/data
+  redis:
+    image: "redis:7.2.3"
+    command: redis-server /usr/local/etc/redis/redis.conf
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+      timeout: 10s
+
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - 8080:8080
+
+volumes:
+  pgdata: {}
+  postgres_data:
+    driver: local
+
+networks:
+  keycloak_network:
+    driver: bridge
