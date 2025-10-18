@@ -1,4 +1,4 @@
-import { AuthManagerError, AuthManagerErrorCodeDict } from "./vault-errors";
+import { AuthManagerError, AuthManagerErrorDict } from "./vault-errors";
 
 /**
  * Keycloak Client Operations Dictionary
@@ -162,7 +162,7 @@ export class KeycloakClient {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
+        throw new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
           reason: `Failed to refresh token: ${
             error.error_description || error.error || response.statusText
           }`,
@@ -178,7 +178,7 @@ export class KeycloakClient {
         throw error;
       }
       console.error("Error refreshing access token:", error);
-      throw new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
+      throw new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
         originalError: error,
         operation: KeycloakOperationDict.refreshAccessToken,
       });
@@ -210,7 +210,7 @@ export class KeycloakClient {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
+        throw new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
           reason: `Failed to request offline token: ${
             error.error_description || error.error || response.statusText
           }`,
@@ -229,7 +229,7 @@ export class KeycloakClient {
         throw error;
       }
       console.error("Error requesting offline token:", error);
-      throw new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
+      throw new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
         originalError: error,
         operation: KeycloakOperationDict.requestOfflineToken,
       });
@@ -272,7 +272,7 @@ export class KeycloakClient {
 
       if (!response.ok) {
         const error = await response.text();
-        throw new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
+        throw new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
           reason: `Failed to revoke token: ${error || response.statusText}`,
           status: response.status,
           tokenTypeHint,
@@ -284,7 +284,7 @@ export class KeycloakClient {
         throw error;
       }
       console.error("Error revoking token:", error);
-      throw new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
+      throw new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
         originalError: error,
         operation: KeycloakOperationDict.revokeToken,
       });
@@ -311,7 +311,7 @@ export class KeycloakClient {
       if (!response.ok) {
         const error = await response.json();
         throw new AuthManagerError(
-          AuthManagerErrorCodeDict.token_introspection_failed,
+          AuthManagerErrorDict.token_introspection_failed.code,
           {
             reason: `Failed to introspect token: ${
               error.error_description || error.error || response.statusText
@@ -330,7 +330,7 @@ export class KeycloakClient {
       }
       console.error("Error introspecting token:", error);
       throw new AuthManagerError(
-        AuthManagerErrorCodeDict.token_introspection_failed,
+        AuthManagerErrorDict.token_introspection_failed.code,
         {
           originalError: error,
           operation: KeycloakOperationDict.introspectToken,
@@ -353,7 +353,7 @@ export class KeycloakClient {
 
       if (!response.ok) {
         const error = await response.text();
-        throw new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
+        throw new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
           reason: `Failed to get user info: ${error || response.statusText}`,
           status: response.status,
           operation: KeycloakOperationDict.getUserInfo,
@@ -366,7 +366,7 @@ export class KeycloakClient {
         throw error;
       }
       console.error("Error getting user info:", error);
-      throw new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
+      throw new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
         originalError: error,
         operation: KeycloakOperationDict.getUserInfo,
       });

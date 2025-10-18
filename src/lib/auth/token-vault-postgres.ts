@@ -1,6 +1,6 @@
 import { eq, lt } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
-import { tokenVault } from "@/lib/db/schema";
+import { AuthVault } from "@/lib/db/schema";
 import {
   OfflineTokenStatusDict,
   VaultTokenTypeDict,
@@ -12,7 +12,7 @@ import { encryptToken, decryptToken, generateIV } from "./encryption";
 import { generatePersistentTokenId } from "./uuid";
 import {
   AuthManagerError,
-  AuthManagerErrorCodeDict,
+  AuthManagerErrorDict,
   AuthManagerOperationDict,
   AuthManagerStorageTypeDict,
 } from "./vault-errors";
@@ -24,7 +24,7 @@ import { isExpired } from "./date-utils";
 export class PgStorage implements IStorage {
   private db = getDb();
 
-  async store(
+  async create(
     userId: string,
     token: string,
     type: VaultTokenType,
@@ -39,10 +39,10 @@ export class PgStorage implements IStorage {
 
       // If tokenId provided, delete existing entry first (upsert behavior)
       if (tokenId) {
-        await this.db.delete(tokenVault).where(eq(tokenVault.id, tokenId));
+        await this.db.delete(AuthVault).where(eq(AuthVault.id, tokenId));
       }
 
-      await this.db.insert(tokenVault).values({
+      await this.db.insert(AuthVault).values({
         id,
         userId,
         tokenType: type,
@@ -54,7 +54,7 @@ export class PgStorage implements IStorage {
 
       return id;
     } catch (error) {
-      throw new AuthManagerError(AuthManagerErrorCodeDict.storage_error, {
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
         operation: AuthManagerOperationDict.store,
         userId,
         persistentTokenId: tokenId,
@@ -68,8 +68,8 @@ export class PgStorage implements IStorage {
     try {
       const result = await this.db
         .select()
-        .from(tokenVault)
-        .where(eq(tokenVault.id, tokenId))
+        .from(AuthVault)
+        .where(eq(AuthVault.id, tokenId))
         .limit(1);
 
       if (result.length === 0) {
@@ -105,7 +105,7 @@ export class PgStorage implements IStorage {
         stateToken: row.stateToken || undefined,
       };
     } catch (error) {
-      throw new AuthManagerError(AuthManagerErrorCodeDict.storage_error, {
+      throw new AuthManagerError("storage_error", {
         operation: AuthManagerOperationDict.retrieve,
         persistentTokenId: tokenId,
         storageType: AuthManagerStorageTypeDict.postgres,
@@ -116,9 +116,9 @@ export class PgStorage implements IStorage {
 
   async delete(tokenId: string): Promise<void> {
     try {
-      await this.db.delete(tokenVault).where(eq(tokenVault.id, tokenId));
+      await this.db.delete(AuthVault).where(eq(AuthVault.id, tokenId));
     } catch (error) {
-      throw new AuthManagerError(AuthManagerErrorCodeDict.storage_error, {
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
         operation: AuthManagerOperationDict.delete,
         persistentTokenId: tokenId,
         storageType: AuthManagerStorageTypeDict.postgres,
@@ -130,13 +130,13 @@ export class PgStorage implements IStorage {
   async cleanup(): Promise<number> {
     try {
       const result = await this.db
-        .delete(tokenVault)
-        .where(lt(tokenVault.expiresAt, new Date()))
-        .returning({ id: tokenVault.id });
+        .delete(AuthVault)
+        .where(lt(AuthVault.expiresAt, new Date()))
+        .returning({ id: AuthVault.id });
 
       return result.length;
     } catch (error) {
-      throw new AuthManagerError(AuthManagerErrorCodeDict.cleanup_error, {
+      throw new AuthManagerError(AuthManagerErrorDict.cleanup_error.code, {
         operation: AuthManagerOperationDict.cleanup,
         storageType: AuthManagerStorageTypeDict.postgres,
         originalError: error,
@@ -148,8 +148,8 @@ export class PgStorage implements IStorage {
     try {
       const results = await this.db
         .select()
-        .from(tokenVault)
-        .where(eq(tokenVault.userId, userId));
+        .from(AuthVault)
+        .where(eq(AuthVault.userId, userId));
 
       return results
         .filter((row) => !isExpired(row.expiresAt))
@@ -170,7 +170,7 @@ export class PgStorage implements IStorage {
           stateToken: row.stateToken || undefined,
         }));
     } catch (error) {
-      throw new AuthManagerError(AuthManagerErrorCodeDict.storage_error, {
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
         operation: AuthManagerOperationDict.get_user_tokens,
         userId,
         storageType: AuthManagerStorageTypeDict.postgres,
@@ -179,17 +179,16 @@ export class PgStorage implements IStorage {
     }
   }
 
-  async createPendingOfflineToken(
+  async makePendingOfflineToken(
     userId: string,
     taskId: string,
-    stateToken: string,
+    stateToken: string | null,
     expiresAt: Date,
     metadata?: Record<string, any>
   ): Promise<string> {
     try {
       const id = generatePersistentTokenId();
-
-      await this.db.insert(tokenVault).values({
+      await this.db.insert(AuthVault).values({
         id,
         userId,
         tokenType: VaultTokenTypeDict.Offline,
@@ -204,7 +203,7 @@ export class PgStorage implements IStorage {
 
       return id;
     } catch (error) {
-      throw new AuthManagerError(AuthManagerErrorCodeDict.storage_error, {
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
         operation: AuthManagerOperationDict.store,
         userId,
         storageType: AuthManagerStorageTypeDict.postgres,
@@ -221,8 +220,8 @@ export class PgStorage implements IStorage {
     try {
       const existing = await this.db
         .select()
-        .from(tokenVault)
-        .where(eq(tokenVault.stateToken, stateToken))
+        .from(AuthVault)
+        .where(eq(AuthVault.stateToken, stateToken))
         .limit(1);
 
       if (existing.length === 0) {
@@ -242,13 +241,13 @@ export class PgStorage implements IStorage {
 
       // Update the entry
       await this.db
-        .update(tokenVault)
+        .update(AuthVault)
         .set({
           encryptedToken,
           iv,
           status,
         })
-        .where(eq(tokenVault.id, row.id));
+        .where(eq(AuthVault.id, row.id));
 
       return {
         id: row.id,
@@ -264,7 +263,7 @@ export class PgStorage implements IStorage {
         stateToken: row.stateToken || undefined,
       };
     } catch (error) {
-      throw new AuthManagerError(AuthManagerErrorCodeDict.storage_error, {
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
         operation: AuthManagerOperationDict.store,
         storageType: AuthManagerStorageTypeDict.postgres,
         originalError: error,
@@ -276,8 +275,8 @@ export class PgStorage implements IStorage {
     try {
       const result = await this.db
         .select()
-        .from(tokenVault)
-        .where(eq(tokenVault.stateToken, stateToken))
+        .from(AuthVault)
+        .where(eq(AuthVault.stateToken, stateToken))
         .limit(1);
 
       if (result.length === 0) {
@@ -303,7 +302,7 @@ export class PgStorage implements IStorage {
         stateToken: row.stateToken || undefined,
       };
     } catch (error) {
-      throw new AuthManagerError(AuthManagerErrorCodeDict.storage_error, {
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
         operation: AuthManagerOperationDict.retrieve,
         storageType: AuthManagerStorageTypeDict.postgres,
         originalError: error,
@@ -314,11 +313,11 @@ export class PgStorage implements IStorage {
   async updateStateToken(tokenId: string, stateToken: string): Promise<void> {
     try {
       await this.db
-        .update(tokenVault)
+        .update(AuthVault)
         .set({ stateToken })
-        .where(eq(tokenVault.id, tokenId));
+        .where(eq(AuthVault.id, tokenId));
     } catch (error) {
-      throw new AuthManagerError(AuthManagerErrorCodeDict.storage_error, {
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
         operation: AuthManagerOperationDict.store,
         persistentTokenId: tokenId,
         storageType: AuthManagerStorageTypeDict.postgres,

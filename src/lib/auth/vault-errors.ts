@@ -1,27 +1,104 @@
-export const AuthManagerErrorCodeDict = {
-  encryption_failed: "encryption_failed",
-  decryption_failed: "decryption_failed",
-  storage_error: "storage_error",
-  token_not_found: "token_not_found",
-  invalid_token_id: "invalid_token_id",
-  connection_error: "connection_error",
-  cleanup_error: "cleanup_error",
-  internal_error: "internal_error",
-  no_refresh_token: "no_refresh_token",
-  invalid_request: "invalid_request",
-  unauthorized: "unauthorized",
-  token_expired: "token_expired",
-  forbidden: "forbidden",
-  invalid_token_type: "invalid_token_type",
-  keycloak_error: "keycloak_error",
-  missing_bearer_token: "missing_bearer_token",
-  invalid_bearer_token: "invalid_bearer_token",
-  token_introspection_failed: "token_introspection_failed",
-  token_not_active: "token_not_active",
+import { StatusCodes } from "http-status-codes";
+
+export const AuthManagerErrorDict = {
+  encryption_failed: {
+    http: StatusCodes.INTERNAL_SERVER_ERROR,
+    code: "encryption_failed",
+    message: "failed to encrypt token",
+  },
+  decryption_failed: {
+    http: StatusCodes.INTERNAL_SERVER_ERROR,
+    code: "decryption_failed",
+    message: "failed to decrypt token",
+  },
+  storage_error: {
+    http: StatusCodes.INTERNAL_SERVER_ERROR,
+    code: "storage_error",
+    message: "storage operation failed",
+  },
+  token_not_found: {
+    http: StatusCodes.NOT_FOUND,
+    code: "token_not_found",
+    message: "token not found",
+  },
+  invalid_token_id: {
+    http: StatusCodes.BAD_REQUEST,
+    code: "invalid_token_id",
+    message: "invalid token id",
+  },
+  connection_error: {
+    http: StatusCodes.SERVICE_UNAVAILABLE,
+    code: "connection_error",
+    message: "failed to connect to storage",
+  },
+  cleanup_error: {
+    http: StatusCodes.INTERNAL_SERVER_ERROR,
+    code: "cleanup_error",
+    message: "failed to cleanup expired tokens",
+  },
+  internal_error: {
+    http: StatusCodes.INTERNAL_SERVER_ERROR,
+    code: "internal_error",
+    message: "internal server error",
+  },
+  no_refresh_token: {
+    http: StatusCodes.NOT_FOUND,
+    code: "no_refresh_token",
+    message: "no refresh token available",
+  },
+  invalid_request: {
+    http: StatusCodes.BAD_REQUEST,
+    code: "invalid_request",
+    message: "invalid request",
+  },
+  unauthorized: {
+    http: StatusCodes.UNAUTHORIZED,
+    code: "unauthorized",
+    message: "unauthorized",
+  },
+  token_expired: {
+    http: StatusCodes.UNAUTHORIZED,
+    code: "token_expired",
+    message: "token expired",
+  },
+  forbidden: {
+    http: StatusCodes.FORBIDDEN,
+    code: "forbidden",
+    message: "forbidden",
+  },
+  invalid_token_type: {
+    http: StatusCodes.BAD_REQUEST,
+    code: "invalid_token_type",
+    message: "invalid token type",
+  },
+  keycloak_error: {
+    http: StatusCodes.INTERNAL_SERVER_ERROR,
+    code: "keycloak_error",
+    message: "keycloak error",
+  },
+  missing_bearer_token: {
+    http: StatusCodes.UNAUTHORIZED,
+    code: "missing_bearer_token",
+    message: "missing or invalid authorization header",
+  },
+  invalid_bearer_token: {
+    http: StatusCodes.UNAUTHORIZED,
+    code: "invalid_bearer_token",
+    message: "invalid bearer token format",
+  },
+  token_introspection_failed: {
+    http: StatusCodes.INTERNAL_SERVER_ERROR,
+    code: "token_introspection_failed",
+    message: "failed to introspect token",
+  },
+  token_not_active: {
+    http: StatusCodes.UNAUTHORIZED,
+    code: "token_not_active",
+    message: "token is not active",
+  },
 } as const;
 
-export type TAuthManagerCode =
-  (typeof AuthManagerErrorCodeDict)[keyof typeof AuthManagerErrorCodeDict];
+export type TAuthManagerCode = keyof typeof AuthManagerErrorDict;
 
 export const AuthManagerOperationDict = {
   store: "store",
@@ -45,43 +122,9 @@ export const AuthManagerStorageTypeDict = {
   redis: "redis",
 } as const;
 
-/**
- * Extract storage type
- */
 export type TAuthManagerStorageType =
   (typeof AuthManagerStorageTypeDict)[keyof typeof AuthManagerStorageTypeDict];
 
-/**
- * User-friendly error messages dictionary
- */
-export const AuthManagerErrorMessageDict: Record<TAuthManagerCode, string> = {
-  [AuthManagerErrorCodeDict.encryption_failed]: "failed to encrypt token",
-  [AuthManagerErrorCodeDict.decryption_failed]: "failed to decrypt token",
-  [AuthManagerErrorCodeDict.storage_error]: "storage operation failed",
-  [AuthManagerErrorCodeDict.token_not_found]: "token not found",
-  [AuthManagerErrorCodeDict.invalid_token_id]: "invalid token id",
-  [AuthManagerErrorCodeDict.connection_error]: "failed to connect to storage",
-  [AuthManagerErrorCodeDict.cleanup_error]: "failed to cleanup expired tokens",
-  [AuthManagerErrorCodeDict.internal_error]: "internal server error",
-  [AuthManagerErrorCodeDict.no_refresh_token]: "no refresh token available",
-  [AuthManagerErrorCodeDict.invalid_request]: "invalid request",
-  [AuthManagerErrorCodeDict.unauthorized]: "unauthorized",
-  [AuthManagerErrorCodeDict.token_expired]: "token expired",
-  [AuthManagerErrorCodeDict.forbidden]: "forbidden",
-  [AuthManagerErrorCodeDict.invalid_token_type]: "invalid token type",
-  [AuthManagerErrorCodeDict.keycloak_error]: "keycloak error",
-  [AuthManagerErrorCodeDict.missing_bearer_token]:
-    "missing or invalid authorization header",
-  [AuthManagerErrorCodeDict.invalid_bearer_token]:
-    "invalid bearer token format",
-  [AuthManagerErrorCodeDict.token_introspection_failed]:
-    "failed to introspect token",
-  [AuthManagerErrorCodeDict.token_not_active]: "token is not active",
-};
-
-/**
- * Vault error metadata (fully typed)
- */
 export interface AuthManagerErrorMetadata {
   code: TAuthManagerCode;
   operation?: TAuthManagerOperation;
@@ -92,10 +135,6 @@ export interface AuthManagerErrorMetadata {
   [key: string]: unknown;
 }
 
-/**
- * Custom error class for auth manager operations
- * Extends Error with structured metadata
- */
 export class AuthManagerError extends Error {
   public readonly code: TAuthManagerCode;
   public readonly metadata: AuthManagerErrorMetadata;
@@ -108,7 +147,7 @@ export class AuthManagerError extends Error {
     const message =
       metadata?.originalError instanceof Error
         ? metadata.originalError.message
-        : AuthManagerErrorMessageDict[code];
+        : AuthManagerErrorDict[code].message;
 
     super(message);
 
@@ -128,7 +167,7 @@ export class AuthManagerError extends Error {
   toJSON(): Record<string, unknown> {
     return {
       name: this.name,
-      message: this.msg,
+      message: this.msg(),
       code: this.code,
       metadata: this.metadata,
       timestamp: this.timestamp.toISOString(),
@@ -137,7 +176,7 @@ export class AuthManagerError extends Error {
   }
 
   msg(): string {
-    return AuthManagerErrorMessageDict[this.code];
+    return AuthManagerErrorDict[this.code].message;
   }
 
   static is(error: unknown): error is AuthManagerError {

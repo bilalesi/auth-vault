@@ -3,17 +3,6 @@ import { z } from "zod";
 /**
  * Zod schema for Token Response validation
  * Based on OAuth 2.0 RFC 6749 Section 5.1 and OpenID Connect Core 1.0
- *
- * Required fields per RFC 6749:
- * - access_token: The access token issued by the authorization server
- * - token_type: The type of token (usually "Bearer")
- *
- * Recommended fields:
- * - expires_in: Lifetime in seconds of the access token
- *
- * Optional fields:
- * - refresh_token: Can be used to obtain new access tokens
- * - scope: Scope of the access token
  */
 export const TokenResponseSchema = z.object({
   access_token: z.string(),
@@ -40,11 +29,11 @@ export const TokenIntrospectionSchema = z.object({
   iss: z.string().optional(),
   aud: z.union([z.string(), z.array(z.string())]).optional(),
   sub: z.string().optional(),
-  typ: z.string().optional(), // "Bearer"
+  typ: z.string().optional(), // ex: Bearer
   azp: z.string().optional(),
-  sid: z.string().optional(), // Session ID
+  sid: z.string().optional(), // session id
   acr: z.string().optional(),
-  "allowed-origins": z.array(z.string()).optional(), // Note: kebab-case!
+  "allowed-origins": z.array(z.string()).optional(),
   realm_access: z.object({ roles: z.array(z.string()) }).optional(),
   resource_access: z
     .record(z.string(), z.object({ roles: z.array(z.string()) }))
@@ -107,30 +96,18 @@ export const KeycloakErrorSchema = z.object({
   error_uri: z.string().url().optional(),
 });
 
-/**
- * Parse and validate Token Response
- */
 export function parseTokenResponse(data: unknown) {
   return TokenResponseSchema.parse(data);
 }
 
-/**
- * Parse and validate Token Introspection Response
- */
 export function parseTokenIntrospection(data: unknown) {
   return TokenIntrospectionSchema.parse(data);
 }
 
-/**
- * Parse and validate User Info Response
- */
 export function parseUserInfo(data: unknown) {
   return UserInfoSchema.parse(data);
 }
 
-/**
- * Parse Keycloak Error Response
- */
 export function parseKeycloakError(data: unknown) {
   try {
     return KeycloakErrorSchema.parse(data);

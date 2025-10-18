@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { validateRequest } from "@/lib/auth/validate-token";
 import {
   AuthManagerError,
-  AuthManagerErrorCodeDict,
+  AuthManagerErrorDict,
 } from "@/lib/auth/vault-errors";
 import { makeResponse, makeVaultError, throwError } from "@/lib/auth/response";
 
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     const validation = await validateRequest(request);
     if (!validation.valid) {
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.unauthorized)
+        new AuthManagerError(AuthManagerErrorDict.unauthorized.code)
       );
     }
 

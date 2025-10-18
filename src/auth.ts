@@ -113,7 +113,7 @@ export async function refreshAccessToken(token: TokenSet): Promise<TokenSet> {
         const expiresAt = getExpirationDate(TokenExpirationDict.refresh);
 
         // Store with the same persistentTokenId to maintain consistency
-        await tokenVault.store(
+        await tokenVault.create(
           token.user.id,
           newRefreshToken,
           "refresh",
@@ -206,7 +206,7 @@ export const authOptions: NextAuthOptions = {
             // Calculate expiration for refresh tokens
             const expiresAt = getExpirationDate(TokenExpirationDict.refresh);
 
-            const persistentTokenId = await tokenVault.store(
+            const persistentTokenId = await tokenVault.create(
               profile.sub,
               account.refresh_token,
               "refresh",

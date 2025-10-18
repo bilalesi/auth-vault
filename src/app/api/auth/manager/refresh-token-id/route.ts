@@ -5,7 +5,7 @@ import { VaultTokenTypeDict } from "@/lib/auth/token-vault-interface";
 import { throwError, makeResponse, makeVaultError } from "@/lib/auth/response";
 import {
   AuthManagerError,
-  AuthManagerErrorCodeDict,
+  AuthManagerErrorDict,
 } from "@/lib/auth/vault-errors";
 
 /**
@@ -23,36 +23,34 @@ import {
  *
  * Requirements: 9.1, 3.1, 3.2
  */
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
     const validation = await validateRequest(request);
 
     if (!validation.valid) {
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.unauthorized)
+        new AuthManagerError(AuthManagerErrorDict.unauthorized.code)
       );
     }
 
-    // Get user's refresh token from vault
     const vault = GetStorage();
     const userTokens = await vault.getUserTokens(validation.userId);
 
-    // Find the refresh token (not offline token)
-    const refreshTokenEntry = userTokens.find(
+    const entry = userTokens.find(
       (entry) => entry.tokenType === VaultTokenTypeDict.Refresh
     );
 
-    if (!refreshTokenEntry) {
+    if (!entry) {
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.no_refresh_token, {
+        new AuthManagerError(AuthManagerErrorDict.no_refresh_token.code, {
           userId: validation.userId,
         })
       );
     }
 
     return makeResponse({
-      persistentTokenId: refreshTokenEntry.id,
-      expiresAt: refreshTokenEntry.expiresAt.toISOString(),
+      persistentTokenId: entry.id,
+      expiresAt: entry.expiresAt.toISOString(),
     });
   } catch (error) {
     return throwError(error);

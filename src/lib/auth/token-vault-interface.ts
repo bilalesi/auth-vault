@@ -61,7 +61,7 @@ export interface IStorage {
    * @param tokenId - Optional: Use specific token ID (for updates)
    * @returns Persistent token ID
    */
-  store(
+  create(
     userId: string,
     token: string,
     type: VaultTokenType,
@@ -105,10 +105,10 @@ export interface IStorage {
    * @param metadata - Optional metadata
    * @returns Persistent token ID
    */
-  createPendingOfflineToken(
+  makePendingOfflineToken(
     userId: string,
     taskId: string,
-    stateToken: string,
+    stateToken: string | null,
     expiresAt: Date,
     metadata?: Record<string, any>
   ): Promise<string>;

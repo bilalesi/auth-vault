@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { getKeycloakClient } from "./keycloak-client";
 import {
   AuthManagerError,
-  AuthManagerErrorCodeDict,
+  AuthManagerErrorDict,
   AuthManagerOperationDict,
 } from "./vault-errors";
 
@@ -38,7 +38,7 @@ export async function validateAccessToken(accessToken: string): Promise<{
     const introspection = await keycloakClient.introspect(accessToken);
 
     if (!introspection.active) {
-      throw new AuthManagerError(AuthManagerErrorCodeDict.token_not_active, {
+      throw new AuthManagerError(AuthManagerErrorDict.token_not_active.code, {
         operation: AuthManagerOperationDict.introspect_token,
       });
     }
@@ -58,7 +58,7 @@ export async function validateAccessToken(accessToken: string): Promise<{
 
     console.error("error validating access token:", error);
     throw new AuthManagerError(
-      AuthManagerErrorCodeDict.token_introspection_failed,
+      AuthManagerErrorDict.token_introspection_failed.code,
       {
         operation: AuthManagerOperationDict.introspect_token,
         originalError: error,

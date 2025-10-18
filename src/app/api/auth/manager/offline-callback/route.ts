@@ -4,7 +4,7 @@ import { GetStorage } from "@/lib/auth/token-vault-factory";
 import { makeResponse, makeVaultError, throwError } from "@/lib/auth/response";
 import {
   AuthManagerError,
-  AuthManagerErrorCodeDict,
+  AuthManagerErrorDict,
 } from "@/lib/auth/vault-errors";
 import { parseStateToken } from "@/lib/auth/state-token";
 import { OfflineTokenStatusDict } from "@/lib/auth/token-vault-interface";
@@ -21,8 +21,6 @@ import { OfflineTokenStatusDict } from "@/lib/auth/token-vault-interface";
  * - state: State token containing userId, taskId, and persistentTokenId
  * - error: Error code if consent was denied
  * - error_description: Error description
- *
- * Requirements: 5.3
  */
 export async function GET(request: NextRequest) {
   try {
@@ -34,7 +32,7 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
+        new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
           reason: `Consent flow failed: ${errorDescription || error}`,
           keycloakError: error,
         })
@@ -43,7 +41,7 @@ export async function GET(request: NextRequest) {
 
     if (!code || !state) {
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.invalid_request, {
+        new AuthManagerError(AuthManagerErrorDict.invalid_request.code, {
           reason: "Missing code or state parameter",
         })
       );
@@ -52,34 +50,33 @@ export async function GET(request: NextRequest) {
     const statePayload = parseStateToken(state);
     if (!statePayload) {
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.invalid_request, {
+        new AuthManagerError(AuthManagerErrorDict.invalid_request.code, {
           reason: "Invalid state token",
         })
       );
     }
 
     const vault = GetStorage();
-    const tokenEntry = await vault.getByStateToken(state);
+    const entry = await vault.getByStateToken(state);
 
-    if (!tokenEntry) {
+    if (!entry) {
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.token_not_found, {
+        new AuthManagerError(AuthManagerErrorDict.token_not_found.code, {
           reason: "Pending offline token request not found",
           stateToken: state,
         })
       );
     }
 
-    if (tokenEntry.id !== statePayload.persistentTokenId) {
+    if (entry.id !== statePayload.persistentTokenId) {
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.invalid_request, {
+        new AuthManagerError(AuthManagerErrorDict.invalid_request.code, {
           reason: "State token mismatch",
         })
       );
     }
 
     try {
-      // Exchange authorization code for tokens
       const keycloakClient = getKeycloakClient();
       const response = await fetch(keycloakClient.conf.tokenEndpoint, {
         method: "post",
@@ -87,10 +84,10 @@ export async function GET(request: NextRequest) {
           "Content-Type": "application/x-www-form-urlencoded",
         },
         body: new URLSearchParams({
+          code,
           client_id: process.env.KEYCLOAK_CLIENT_ID!,
           client_secret: process.env.KEYCLOAK_CLIENT_SECRET!,
           grant_type: "authorization_code",
-          code,
           redirect_uri: `${process.env.NEXTAUTH_URL}/api/auth/manager/offline-callback`,
         }),
       });
@@ -140,7 +137,7 @@ export async function GET(request: NextRequest) {
       );
 
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
+        new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
           reason: "Failed to exchange authorization code for offline token",
           originalError: error,
         })

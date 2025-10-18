@@ -8,7 +8,7 @@ import { encryptToken, decryptToken, generateIV } from "./encryption";
 import { generatePersistentTokenId } from "./uuid";
 import {
   AuthManagerError,
-  AuthManagerErrorCodeDict,
+  AuthManagerErrorDict,
   AuthManagerOperationDict,
   AuthManagerStorageTypeDict,
 } from "./vault-errors";
@@ -104,7 +104,7 @@ export class RedisStorage implements IStorage {
     return `state:${stateToken}`;
   }
 
-  async store(
+  async create(
     userId: string,
     token: string,
     type: VaultTokenType,
@@ -130,8 +130,6 @@ export class RedisStorage implements IStorage {
 
       const tokenKey = this.getTokenKey(id);
       const userTokensKey = this.getUserTokensKey(userId);
-
-      // Calculate TTL in seconds
       const ttl = getTTLSeconds(expiresAt);
 
       // Store token with TTL
@@ -143,7 +141,7 @@ export class RedisStorage implements IStorage {
 
       return id;
     } catch (error) {
-      throw new AuthManagerError(AuthManagerErrorCodeDict.storage_error, {
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
         operation: AuthManagerOperationDict.store,
         userId,
         persistentTokenId: tokenId,
@@ -191,7 +189,7 @@ export class RedisStorage implements IStorage {
         stateToken: entry.stateToken,
       };
     } catch (error) {
-      throw new AuthManagerError(AuthManagerErrorCodeDict.storage_error, {
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
         operation: AuthManagerOperationDict.retrieve,
         persistentTokenId: tokenId,
         storageType: AuthManagerStorageTypeDict.redis,
@@ -217,7 +215,7 @@ export class RedisStorage implements IStorage {
       // Delete the token
       await this.redis.del(tokenKey);
     } catch (error) {
-      throw new AuthManagerError(AuthManagerErrorCodeDict.storage_error, {
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
         operation: AuthManagerOperationDict.delete,
         persistentTokenId: tokenId,
         storageType: AuthManagerStorageTypeDict.redis,
@@ -253,7 +251,7 @@ export class RedisStorage implements IStorage {
 
       return tokens;
     } catch (error) {
-      throw new AuthManagerError(AuthManagerErrorCodeDict.storage_error, {
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
         operation: AuthManagerOperationDict.get_user_tokens,
         userId,
         storageType: AuthManagerStorageTypeDict.redis,
@@ -262,7 +260,7 @@ export class RedisStorage implements IStorage {
     }
   }
 
-  async createPendingOfflineToken(
+  async makePendingOfflineToken(
     userId: string,
     taskId: string,
     stateToken: string,
@@ -305,7 +303,7 @@ export class RedisStorage implements IStorage {
 
       return id;
     } catch (error) {
-      throw new AuthManagerError(AuthManagerErrorCodeDict.storage_error, {
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
         operation: AuthManagerOperationDict.store,
         userId,
         storageType: AuthManagerStorageTypeDict.redis,
@@ -375,7 +373,7 @@ export class RedisStorage implements IStorage {
         stateToken: updatedEntry.stateToken,
       };
     } catch (error) {
-      throw new AuthManagerError(AuthManagerErrorCodeDict.storage_error, {
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
         operation: AuthManagerOperationDict.store,
         storageType: AuthManagerStorageTypeDict.redis,
         originalError: error,
@@ -396,7 +394,7 @@ export class RedisStorage implements IStorage {
       // Retrieve the token entry
       return await this.retrieve(tokenId);
     } catch (error) {
-      throw new AuthManagerError(AuthManagerErrorCodeDict.storage_error, {
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
         operation: AuthManagerOperationDict.retrieve,
         storageType: AuthManagerStorageTypeDict.redis,
         originalError: error,
@@ -411,7 +409,7 @@ export class RedisStorage implements IStorage {
       const data = await this.redis.get(tokenKey);
 
       if (!data) {
-        throw new AuthManagerError(AuthManagerErrorCodeDict.token_not_found, {
+        throw new AuthManagerError(AuthManagerErrorDict.token_not_found.code, {
           persistentTokenId: tokenId,
         });
       }
@@ -437,7 +435,7 @@ export class RedisStorage implements IStorage {
       if (AuthManagerError.is(error)) {
         throw error;
       }
-      throw new AuthManagerError(AuthManagerErrorCodeDict.storage_error, {
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
         operation: AuthManagerOperationDict.store,
         persistentTokenId: tokenId,
         storageType: AuthManagerStorageTypeDict.redis,

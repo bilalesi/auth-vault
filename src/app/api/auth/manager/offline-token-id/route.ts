@@ -9,7 +9,7 @@ import { makeResponse, makeVaultError, throwError } from "@/lib/auth/response";
 import { getExpirationDate, TokenExpirationDict } from "@/lib/auth/date-utils";
 import {
   AuthManagerError,
-  AuthManagerErrorCodeDict,
+  AuthManagerErrorDict,
 } from "@/lib/auth/vault-errors";
 
 /**
@@ -21,22 +21,21 @@ import {
  * Users should first call POST /api/auth/manager/offline-consent to get the consent URL,
  * grant consent, and then retry this endpoint.
  *
- * Requirements: 9.2, 5.1, 5.2, 5.3
+ * (do not use it)
+ * @deprecated
  */
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    // Validate Bearer token from Authorization header
     const validation = await validateRequest(request);
 
     if (!validation.valid) {
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.unauthorized)
+        new AuthManagerError(AuthManagerErrorDict.unauthorized.code)
       );
     }
-
+    const store = GetStorage();
     const keycloakClient = getKeycloakClient();
-    const vault = GetStorage();
-    const userTokens = await vault.getUserTokens(validation.userId);
+    const userTokens = await store.getUserTokens(validation.userId);
 
     const refreshTokenEntry = userTokens.find(
       (t) => t.tokenType === VaultTokenTypeDict.Refresh
@@ -44,7 +43,7 @@ export async function POST(request: NextRequest) {
 
     if (!refreshTokenEntry) {
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.no_refresh_token, {
+        new AuthManagerError(AuthManagerErrorDict.no_refresh_token.code, {
           userId: validation.userId,
         })
       );
@@ -52,7 +51,7 @@ export async function POST(request: NextRequest) {
 
     if (!refreshTokenEntry.encryptedToken || !refreshTokenEntry.iv) {
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.no_refresh_token, {
+        new AuthManagerError(AuthManagerErrorDict.no_refresh_token.code, {
           userId: validation.userId,
           reason: "Refresh token is pending or not available",
         })
@@ -70,10 +69,9 @@ export async function POST(request: NextRequest) {
       );
 
       if (offlineTokenResponse.refresh_token) {
-        const tokenVault = GetStorage();
         const expiresAt = getExpirationDate(TokenExpirationDict.offline);
 
-        const persistentTokenId = await tokenVault.store(
+        const persistentTokenId = await store.create(
           validation.userId,
           offlineTokenResponse.refresh_token,
           VaultTokenTypeDict.Offline,
@@ -85,23 +83,20 @@ export async function POST(request: NextRequest) {
           }
         );
 
-        console.log("offline token stored in vault:", persistentTokenId);
-
         return makeResponse({
           persistentTokenId,
           expiresAt: expiresAt.toISOString(),
         });
       }
 
-      // Unexpected response
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
+        new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
           userId: validation.userId,
         })
       );
     } catch (error: any) {
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
+        new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
           userId: validation.userId,
           originalError: error,
         })
@@ -129,7 +124,7 @@ export async function DELETE(request: NextRequest) {
 
     if (!validation.valid) {
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.unauthorized)
+        new AuthManagerError(AuthManagerErrorDict.unauthorized.code)
       );
     }
 
@@ -146,7 +141,7 @@ export async function DELETE(request: NextRequest) {
 
     if (!tokenEntry) {
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.token_not_found, {
+        new AuthManagerError(AuthManagerErrorDict.token_not_found.code, {
           persistentTokenId,
         })
       );
@@ -155,7 +150,7 @@ export async function DELETE(request: NextRequest) {
     // Verify the token belongs to the authenticated user
     if (tokenEntry.userId !== validation.userId) {
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.forbidden, {
+        new AuthManagerError(AuthManagerErrorDict.forbidden.code, {
           userId: validation.userId,
           persistentTokenId,
         })
@@ -165,7 +160,7 @@ export async function DELETE(request: NextRequest) {
     // Only allow revoking offline tokens (not refresh tokens)
     if (tokenEntry.tokenType !== VaultTokenTypeDict.Offline) {
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.invalid_token_type, {
+        new AuthManagerError(AuthManagerErrorDict.invalid_token_type.code, {
           persistentTokenId,
         })
       );
@@ -174,7 +169,7 @@ export async function DELETE(request: NextRequest) {
     // Check if token is available (not pending)
     if (!tokenEntry.encryptedToken || !tokenEntry.iv) {
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.invalid_token_type, {
+        new AuthManagerError(AuthManagerErrorDict.invalid_token_type.code, {
           persistentTokenId,
           reason: "Token is pending and cannot be revoked yet",
         })

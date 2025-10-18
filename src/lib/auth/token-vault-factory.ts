@@ -4,7 +4,7 @@ import { RedisStorage } from "./token-vault-redis";
 import { match } from "ts-pattern";
 import {
   AuthManagerError,
-  AuthManagerErrorCodeDict,
+  AuthManagerErrorDict,
   AuthManagerOperationDict,
 } from "./vault-errors";
 
@@ -41,7 +41,7 @@ export function GetStorage(): IStorage {
   const storageType = process.env.TOKEN_VAULT_STORAGE;
 
   if (!storageType) {
-    throw new AuthManagerError(AuthManagerErrorCodeDict.connection_error, {
+    throw new AuthManagerError(AuthManagerErrorDict.connection_error.code, {
       operation: AuthManagerOperationDict.initialize,
     });
   }
@@ -56,7 +56,7 @@ export function GetStorage(): IStorage {
       return new RedisStorage();
     })
     .otherwise(() => {
-      throw new AuthManagerError(AuthManagerErrorCodeDict.connection_error, {
+      throw new AuthManagerError(AuthManagerErrorDict.connection_error.code, {
         operation: AuthManagerOperationDict.initialize,
       });
     }));

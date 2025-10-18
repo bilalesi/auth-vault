@@ -6,7 +6,7 @@ import { decryptToken } from "@/lib/auth/encryption";
 import { validateRequest } from "@/lib/auth/validate-token";
 import {
   AuthManagerError,
-  AuthManagerErrorCodeDict,
+  AuthManagerErrorDict,
 } from "@/lib/auth/vault-errors";
 import { VaultTokenTypeDict } from "@/lib/auth/token-vault-interface";
 import { makeResponse, makeVaultError, throwError } from "@/lib/auth/response";
@@ -16,7 +16,6 @@ import {
   getExpirationDate,
 } from "@/lib/auth/date-utils";
 
-// Request schema
 const AccessTokenRequestSchema = z.object({
   persistentTokenId: z.uuid(),
 });
@@ -26,92 +25,79 @@ const AccessTokenRequestSchema = z.object({
  *
  * Exchanges a persistent token ID for a fresh access token.
  * Works with both refresh tokens and offline tokens.
- *
- * Requirements: 9.3, 3.4, 3.5, 4.4, 4.5, 6.3, 6.4, 6.5
  */
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    // Validate Bearer token from Authorization header
     const validation = await validateRequest(request);
     if (!validation.valid) {
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.unauthorized)
+        new AuthManagerError(AuthManagerErrorDict.unauthorized.code)
       );
     }
 
-    // Parse and validate request body
-    const body = await request.json();
-    const { persistentTokenId } = AccessTokenRequestSchema.parse(body);
+    const query = request.nextUrl.searchParams;
+    const { persistentTokenId } = AccessTokenRequestSchema.parse({
+      persistentTokenId: query.get("id"),
+    });
 
-    // Retrieve token from vault
     const vault = GetStorage();
-    const tokenEntry = await vault.retrieve(persistentTokenId);
+    const entry = await vault.retrieve(persistentTokenId);
 
-    if (!tokenEntry) {
+    if (!entry) {
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.token_not_found, {
+        new AuthManagerError(AuthManagerErrorDict.token_not_found.code, {
           persistentTokenId,
         })
       );
     }
 
-    // Check if token has expired
-    if (isExpired(tokenEntry.expiresAt)) {
+    if (isExpired(entry.expiresAt)) {
       await vault.delete(persistentTokenId);
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.token_expired, {
+        new AuthManagerError(AuthManagerErrorDict.token_expired.code, {
           persistentTokenId,
         })
       );
     }
 
-    // Check if token is available (not pending)
-    if (!tokenEntry.encryptedToken || !tokenEntry.iv) {
+    if (!entry.encryptedToken || !entry.iv) {
       return makeVaultError(
-        new AuthManagerError(AuthManagerErrorCodeDict.token_not_found, {
+        new AuthManagerError(AuthManagerErrorDict.token_not_found.code, {
           persistentTokenId,
           reason: "Token is pending and not yet available",
-          status: tokenEntry.status,
+          status: entry.status,
         })
       );
     }
 
-    // Decrypt the token
-    const token = decryptToken(tokenEntry.encryptedToken, tokenEntry.iv);
     const keycloakClient = getKeycloakClient();
+    const token = decryptToken(entry.encryptedToken, entry.iv);
+    const response = await keycloakClient.refreshAccessToken(token);
 
-    // Exchange token for new access token
-    const tokenResponse = await keycloakClient.refreshAccessToken(token);
-
-    // If Keycloak returns a new refresh token, update it in the vault
-    if (tokenResponse.refresh_token && tokenResponse.refresh_token !== token) {
-      // Delete old token
-      await vault.delete(persistentTokenId);
-
-      // Store new token with same ID
+    if (response.refresh_token) {
+      // it will be deleted in the store
+      // await vault.delete(persistentTokenId);
       const expiresAt =
-        tokenEntry.tokenType === VaultTokenTypeDict.Offline
+        entry.tokenType === VaultTokenTypeDict.Offline
           ? getExpirationDate(TokenExpirationDict.offline)
           : getExpirationDate(TokenExpirationDict.refresh);
 
-      await vault.store(
-        tokenEntry.userId,
-        tokenResponse.refresh_token,
-        tokenEntry.tokenType,
+      await vault.create(
+        entry.userId,
+        response.refresh_token,
+        entry.tokenType,
         expiresAt,
         {
-          ...tokenEntry.metadata,
+          ...entry.metadata,
           updatedAt: new Date().toISOString(),
         },
-        persistentTokenId // Use same ID
+        persistentTokenId
       );
-
-      console.log("token rotated in vault:", persistentTokenId);
     }
 
     return makeResponse({
-      accessToken: tokenResponse.access_token,
-      expiresIn: tokenResponse.expires_in,
+      accessToken: response.access_token,
+      expiresIn: response.expires_in,
     });
   } catch (error) {
     return throwError(error);
