@@ -7,18 +7,19 @@ import { validateRequest } from "@/lib/auth/validate-token";
 import { VaultTokenTypeDict } from "@/lib/auth/token-vault-interface";
 import { makeResponse, makeVaultError, throwError } from "@/lib/auth/response";
 import { getExpirationDate, TokenExpirationDict } from "@/lib/auth/date-utils";
-import { VaultError, VaultErrorCodeDict } from "@/lib/auth/vault-errors";
-
-// Request schema
-const OfflineTokenRequestSchema = z.object({
-  redirectUri: z.string().url().optional(),
-});
+import {
+  AuthManagerError,
+  AuthManagerErrorCodeDict,
+} from "@/lib/auth/vault-errors";
 
 /**
- * POST /api/auth/token/offline-id
+ * POST /api/auth/manager/offline-token-id
  *
  * Requests an offline token from Keycloak and returns a persistent token ID.
- * If user consent is required, returns a consent URL instead.
+ *
+ * Note: If user consent is required, this endpoint will fail with a keycloak_error.
+ * Users should first call POST /api/auth/manager/offline-consent to get the consent URL,
+ * grant consent, and then retry this endpoint.
  *
  * Requirements: 9.2, 5.1, 5.2, 5.3
  */
@@ -27,55 +28,49 @@ export async function POST(request: NextRequest) {
     // Validate Bearer token from Authorization header
     const validation = await validateRequest(request);
 
-    if (!validation.valid || !validation.userId) {
+    if (!validation.valid) {
       return makeVaultError(
-        new VaultError(VaultErrorCodeDict.unauthorized, {
-          userId: validation.userId,
-        })
+        new AuthManagerError(AuthManagerErrorCodeDict.unauthorized)
       );
     }
 
-    // Parse and validate request body
-    const body = await request.json();
-    const validatedBody = OfflineTokenRequestSchema.parse(body);
-
-    // Initialize Keycloak client
     const keycloakClient = getKeycloakClient();
-
-    // Get the user's refresh token from the vault
     const vault = GetStorage();
     const userTokens = await vault.getUserTokens(validation.userId);
 
-    // Find the refresh token (not offline token)
     const refreshTokenEntry = userTokens.find(
       (t) => t.tokenType === VaultTokenTypeDict.Refresh
     );
 
     if (!refreshTokenEntry) {
       return makeVaultError(
-        new VaultError(VaultErrorCodeDict.no_refresh_token, {
+        new AuthManagerError(AuthManagerErrorCodeDict.no_refresh_token, {
           userId: validation.userId,
         })
       );
     }
 
-    // Decrypt the refresh token
+    if (!refreshTokenEntry.encryptedToken || !refreshTokenEntry.iv) {
+      return makeVaultError(
+        new AuthManagerError(AuthManagerErrorCodeDict.no_refresh_token, {
+          userId: validation.userId,
+          reason: "Refresh token is pending or not available",
+        })
+      );
+    }
+
     const refreshToken = decryptToken(
       refreshTokenEntry.encryptedToken,
       refreshTokenEntry.iv
     );
 
-    // Request offline token from Keycloak by exchanging the refresh token
     try {
       const offlineTokenResponse = await keycloakClient.requestOfflineToken(
         refreshToken
       );
 
-      // If we have an offline token, store it in the vault
       if (offlineTokenResponse.refresh_token) {
         const tokenVault = GetStorage();
-
-        // Calculate expiration for offline tokens
         const expiresAt = getExpirationDate(TokenExpirationDict.offline);
 
         const persistentTokenId = await tokenVault.store(
@@ -100,34 +95,13 @@ export async function POST(request: NextRequest) {
 
       // Unexpected response
       return makeVaultError(
-        new VaultError(VaultErrorCodeDict.keycloak_error, {
+        new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
           userId: validation.userId,
         })
       );
     } catch (error: any) {
-      console.error("error requesting offline token:", error);
-
-      // Check if it's a consent required error
-      if (
-        error.error === "consent_required" ||
-        error.error_description?.includes("consent")
-      ) {
-        // Build consent URL
-        const consentUrl =
-          `${process.env.KEYCLOAK_ISSUER}/protocol/openid-connect/auth?` +
-          `client_id=${process.env.KEYCLOAK_CLIENT_ID}` +
-          `&response_type=code` +
-          `&scope=openid offline_access` +
-          `&redirect_uri=${encodeURIComponent(
-            validatedBody.redirectUri ||
-              `${process.env.NEXTAUTH_URL}/api/auth/callback/keycloak`
-          )}`;
-
-        return makeResponse({ consentUrl });
-      }
-
       return makeVaultError(
-        new VaultError(VaultErrorCodeDict.keycloak_error, {
+        new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
           userId: validation.userId,
           originalError: error,
         })
@@ -139,7 +113,7 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * DELETE /api/auth/token/offline-id
+ * DELETE /api/auth/manager/offline-token-id
  *
  * Revokes an offline token by:
  * 1. Retrieving it from the vault
@@ -153,11 +127,9 @@ export async function DELETE(request: NextRequest) {
     // Validate Bearer token from Authorization header
     const validation = await validateRequest(request);
 
-    if (!validation.valid || !validation.userId) {
+    if (!validation.valid) {
       return makeVaultError(
-        new VaultError(VaultErrorCodeDict.unauthorized, {
-          userId: validation.userId,
-        })
+        new AuthManagerError(AuthManagerErrorCodeDict.unauthorized)
       );
     }
 
@@ -174,7 +146,7 @@ export async function DELETE(request: NextRequest) {
 
     if (!tokenEntry) {
       return makeVaultError(
-        new VaultError(VaultErrorCodeDict.token_not_found, {
+        new AuthManagerError(AuthManagerErrorCodeDict.token_not_found, {
           persistentTokenId,
         })
       );
@@ -183,7 +155,7 @@ export async function DELETE(request: NextRequest) {
     // Verify the token belongs to the authenticated user
     if (tokenEntry.userId !== validation.userId) {
       return makeVaultError(
-        new VaultError(VaultErrorCodeDict.forbidden, {
+        new AuthManagerError(AuthManagerErrorCodeDict.forbidden, {
           userId: validation.userId,
           persistentTokenId,
         })
@@ -193,8 +165,18 @@ export async function DELETE(request: NextRequest) {
     // Only allow revoking offline tokens (not refresh tokens)
     if (tokenEntry.tokenType !== VaultTokenTypeDict.Offline) {
       return makeVaultError(
-        new VaultError(VaultErrorCodeDict.invalid_token_type, {
+        new AuthManagerError(AuthManagerErrorCodeDict.invalid_token_type, {
           persistentTokenId,
+        })
+      );
+    }
+
+    // Check if token is available (not pending)
+    if (!tokenEntry.encryptedToken || !tokenEntry.iv) {
+      return makeVaultError(
+        new AuthManagerError(AuthManagerErrorCodeDict.invalid_token_type, {
+          persistentTokenId,
+          reason: "Token is pending and cannot be revoked yet",
         })
       );
     }
@@ -207,7 +189,7 @@ export async function DELETE(request: NextRequest) {
 
     // Revoke token in Keycloak
     try {
-      await keycloakClient.revokeToken(token);
+      await keycloakClient.revoke(token);
       console.log("Offline token revoked in Keycloak:", persistentTokenId);
     } catch (error) {
       console.error("Error revoking token in Keycloak:", error);

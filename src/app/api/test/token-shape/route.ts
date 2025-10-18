@@ -32,7 +32,7 @@ export async function GET() {
     // Test 1: Token Introspection
     if (session.accessToken) {
       try {
-        const introspection = await keycloakClient.introspectToken(
+        const introspection = await keycloakClient.introspect(
           session.accessToken
         );
         results.tests.introspection = {
@@ -51,7 +51,7 @@ export async function GET() {
     // Test 2: User Info
     if (session.accessToken) {
       try {
-        const userInfo = await keycloakClient.getUserInfo(session.accessToken);
+        const userInfo = await keycloakClient.info(session.accessToken);
         results.tests.userInfo = {
           success: true,
           data: userInfo,

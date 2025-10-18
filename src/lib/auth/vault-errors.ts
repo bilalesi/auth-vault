@@ -1,7 +1,4 @@
-/**
- * Vault error codes dictionary
- */
-export const VaultErrorCodeDict = {
+export const AuthManagerErrorCodeDict = {
   encryption_failed: "encryption_failed",
   decryption_failed: "decryption_failed",
   storage_error: "storage_error",
@@ -23,16 +20,10 @@ export const VaultErrorCodeDict = {
   token_not_active: "token_not_active",
 } as const;
 
-/**
- * Extract vault error code type
- */
-export type VaultErrorCode =
-  (typeof VaultErrorCodeDict)[keyof typeof VaultErrorCodeDict];
+export type TAuthManagerCode =
+  (typeof AuthManagerErrorCodeDict)[keyof typeof AuthManagerErrorCodeDict];
 
-/**
- * Vault operation types
- */
-export const VaultOperationDict = {
+export const AuthManagerOperationDict = {
   store: "store",
   retrieve: "retrieve",
   delete: "delete",
@@ -43,16 +34,13 @@ export const VaultOperationDict = {
   introspect_token: "introspect_token",
 } as const;
 
-/**
- * Extract vault operation type
- */
-export type VaultOperation =
-  (typeof VaultOperationDict)[keyof typeof VaultOperationDict];
+export type TAuthManagerOperation =
+  (typeof AuthManagerOperationDict)[keyof typeof AuthManagerOperationDict];
 
 /**
  * Storage type dictionary
  */
-export const VaultStorageTypeDict = {
+export const AuthManagerStorageTypeDict = {
   postgres: "postgres",
   redis: "redis",
 } as const;
@@ -60,85 +48,83 @@ export const VaultStorageTypeDict = {
 /**
  * Extract storage type
  */
-export type VaultStorageType =
-  (typeof VaultStorageTypeDict)[keyof typeof VaultStorageTypeDict];
+export type TAuthManagerStorageType =
+  (typeof AuthManagerStorageTypeDict)[keyof typeof AuthManagerStorageTypeDict];
 
 /**
  * User-friendly error messages dictionary
  */
-export const VaultErrorMessageDict: Record<VaultErrorCode, string> = {
-  [VaultErrorCodeDict.encryption_failed]: "failed to encrypt token",
-  [VaultErrorCodeDict.decryption_failed]: "failed to decrypt token",
-  [VaultErrorCodeDict.storage_error]: "storage operation failed",
-  [VaultErrorCodeDict.token_not_found]: "token not found",
-  [VaultErrorCodeDict.invalid_token_id]: "invalid token id",
-  [VaultErrorCodeDict.connection_error]: "failed to connect to storage",
-  [VaultErrorCodeDict.cleanup_error]: "failed to cleanup expired tokens",
-  [VaultErrorCodeDict.internal_error]: "internal server error",
-  [VaultErrorCodeDict.no_refresh_token]: "no refresh token available",
-  [VaultErrorCodeDict.invalid_request]: "invalid request",
-  [VaultErrorCodeDict.unauthorized]: "unauthorized",
-  [VaultErrorCodeDict.token_expired]: "token expired",
-  [VaultErrorCodeDict.forbidden]: "forbidden",
-  [VaultErrorCodeDict.invalid_token_type]: "invalid token type",
-  [VaultErrorCodeDict.keycloak_error]: "keycloak error",
-  [VaultErrorCodeDict.missing_bearer_token]:
+export const AuthManagerErrorMessageDict: Record<TAuthManagerCode, string> = {
+  [AuthManagerErrorCodeDict.encryption_failed]: "failed to encrypt token",
+  [AuthManagerErrorCodeDict.decryption_failed]: "failed to decrypt token",
+  [AuthManagerErrorCodeDict.storage_error]: "storage operation failed",
+  [AuthManagerErrorCodeDict.token_not_found]: "token not found",
+  [AuthManagerErrorCodeDict.invalid_token_id]: "invalid token id",
+  [AuthManagerErrorCodeDict.connection_error]: "failed to connect to storage",
+  [AuthManagerErrorCodeDict.cleanup_error]: "failed to cleanup expired tokens",
+  [AuthManagerErrorCodeDict.internal_error]: "internal server error",
+  [AuthManagerErrorCodeDict.no_refresh_token]: "no refresh token available",
+  [AuthManagerErrorCodeDict.invalid_request]: "invalid request",
+  [AuthManagerErrorCodeDict.unauthorized]: "unauthorized",
+  [AuthManagerErrorCodeDict.token_expired]: "token expired",
+  [AuthManagerErrorCodeDict.forbidden]: "forbidden",
+  [AuthManagerErrorCodeDict.invalid_token_type]: "invalid token type",
+  [AuthManagerErrorCodeDict.keycloak_error]: "keycloak error",
+  [AuthManagerErrorCodeDict.missing_bearer_token]:
     "missing or invalid authorization header",
-  [VaultErrorCodeDict.invalid_bearer_token]: "invalid bearer token format",
-  [VaultErrorCodeDict.token_introspection_failed]: "failed to introspect token",
-  [VaultErrorCodeDict.token_not_active]: "token is not active",
+  [AuthManagerErrorCodeDict.invalid_bearer_token]:
+    "invalid bearer token format",
+  [AuthManagerErrorCodeDict.token_introspection_failed]:
+    "failed to introspect token",
+  [AuthManagerErrorCodeDict.token_not_active]: "token is not active",
 };
 
 /**
  * Vault error metadata (fully typed)
  */
-export interface VaultErrorMetadata {
-  code: VaultErrorCode;
-  operation?: VaultOperation;
+export interface AuthManagerErrorMetadata {
+  code: TAuthManagerCode;
+  operation?: TAuthManagerOperation;
   persistentTokenId?: string;
   userId?: string;
-  storageType?: VaultStorageType;
+  storageType?: TAuthManagerStorageType;
   originalError?: unknown;
   [key: string]: unknown;
 }
 
 /**
- * Custom error class for vault operations
+ * Custom error class for auth manager operations
  * Extends Error with structured metadata
  */
-export class VaultError extends Error {
-  public readonly code: VaultErrorCode;
-  public readonly metadata: VaultErrorMetadata;
+export class AuthManagerError extends Error {
+  public readonly code: TAuthManagerCode;
+  public readonly metadata: AuthManagerErrorMetadata;
   public readonly timestamp: Date;
 
   constructor(
-    code: VaultErrorCode,
-    metadata?: Omit<VaultErrorMetadata, "code">
+    code: TAuthManagerCode,
+    metadata?: Omit<AuthManagerErrorMetadata, "code">
   ) {
     const message =
       metadata?.originalError instanceof Error
         ? metadata.originalError.message
-        : VaultErrorMessageDict[code];
+        : AuthManagerErrorMessageDict[code];
 
     super(message);
 
-    // Maintains proper stack trace for where our error was thrown (only available on V8)
     if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, VaultError);
+      Error.captureStackTrace(this, AuthManagerError);
     }
 
-    this.name = "VaultError";
+    this.name = "AuthManagerError";
     this.code = code;
     this.metadata = { code, ...metadata };
     this.timestamp = new Date();
 
     // Set the prototype explicitly for proper instanceof checks
-    Object.setPrototypeOf(this, VaultError.prototype);
+    Object.setPrototypeOf(this, AuthManagerError.prototype);
   }
 
-  /**
-   * Convert error to JSON for logging
-   */
   toJSON(): Record<string, unknown> {
     return {
       name: this.name,
@@ -150,17 +136,11 @@ export class VaultError extends Error {
     };
   }
 
-  /**
-   * Get a user-friendly error message
-   */
   msg(): string {
-    return VaultErrorMessageDict[this.code];
+    return AuthManagerErrorMessageDict[this.code];
   }
 
-  /**
-   * Check if an error is a VaultError
-   */
-  static is(error: unknown): error is VaultError {
-    return error instanceof VaultError;
+  static is(error: unknown): error is AuthManagerError {
+    return error instanceof AuthManagerError;
   }
 }

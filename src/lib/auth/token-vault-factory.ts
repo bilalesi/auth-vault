@@ -3,9 +3,9 @@ import { PgStorage } from "./token-vault-postgres";
 import { RedisStorage } from "./token-vault-redis";
 import { match } from "ts-pattern";
 import {
-  VaultError,
-  VaultErrorCodeDict,
-  VaultOperationDict,
+  AuthManagerError,
+  AuthManagerErrorCodeDict,
+  AuthManagerOperationDict,
 } from "./vault-errors";
 
 /**
@@ -41,8 +41,8 @@ export function GetStorage(): IStorage {
   const storageType = process.env.TOKEN_VAULT_STORAGE;
 
   if (!storageType) {
-    throw new VaultError(VaultErrorCodeDict.connection_error, {
-      operation: VaultOperationDict.initialize,
+    throw new AuthManagerError(AuthManagerErrorCodeDict.connection_error, {
+      operation: AuthManagerOperationDict.initialize,
     });
   }
 
@@ -56,8 +56,8 @@ export function GetStorage(): IStorage {
       return new RedisStorage();
     })
     .otherwise(() => {
-      throw new VaultError(VaultErrorCodeDict.connection_error, {
-        operation: VaultOperationDict.initialize,
+      throw new AuthManagerError(AuthManagerErrorCodeDict.connection_error, {
+        operation: AuthManagerOperationDict.initialize,
       });
     }));
 }

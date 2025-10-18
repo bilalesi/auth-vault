@@ -1,4 +1,4 @@
-import { VaultError, VaultErrorCodeDict } from "./vault-errors";
+import { AuthManagerError, AuthManagerErrorCodeDict } from "./vault-errors";
 
 /**
  * Keycloak Client Operations Dictionary
@@ -162,7 +162,7 @@ export class KeycloakClient {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new VaultError(VaultErrorCodeDict.keycloak_error, {
+        throw new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
           reason: `Failed to refresh token: ${
             error.error_description || error.error || response.statusText
           }`,
@@ -174,11 +174,11 @@ export class KeycloakClient {
 
       return await response.json();
     } catch (error) {
-      if (VaultError.is(error)) {
+      if (AuthManagerError.is(error)) {
         throw error;
       }
       console.error("Error refreshing access token:", error);
-      throw new VaultError(VaultErrorCodeDict.keycloak_error, {
+      throw new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
         originalError: error,
         operation: KeycloakOperationDict.refreshAccessToken,
       });
@@ -210,7 +210,7 @@ export class KeycloakClient {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new VaultError(VaultErrorCodeDict.keycloak_error, {
+        throw new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
           reason: `Failed to request offline token: ${
             error.error_description || error.error || response.statusText
           }`,
@@ -225,11 +225,11 @@ export class KeycloakClient {
       // The refresh_token in the response is now an offline token (long-lived)
       return tokenResponse;
     } catch (error) {
-      if (VaultError.is(error)) {
+      if (AuthManagerError.is(error)) {
         throw error;
       }
       console.error("Error requesting offline token:", error);
-      throw new VaultError(VaultErrorCodeDict.keycloak_error, {
+      throw new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
         originalError: error,
         operation: KeycloakOperationDict.requestOfflineToken,
       });
@@ -247,7 +247,7 @@ export class KeycloakClient {
   /**
    * Revoke a token (refresh token or access token)
    */
-  async revokeToken(
+  async revoke(
     token: string,
     tokenTypeHint?: "refresh_token" | "access_token"
   ): Promise<void> {
@@ -272,7 +272,7 @@ export class KeycloakClient {
 
       if (!response.ok) {
         const error = await response.text();
-        throw new VaultError(VaultErrorCodeDict.keycloak_error, {
+        throw new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
           reason: `Failed to revoke token: ${error || response.statusText}`,
           status: response.status,
           tokenTypeHint,
@@ -280,11 +280,11 @@ export class KeycloakClient {
         });
       }
     } catch (error) {
-      if (VaultError.is(error)) {
+      if (AuthManagerError.is(error)) {
         throw error;
       }
       console.error("Error revoking token:", error);
-      throw new VaultError(VaultErrorCodeDict.keycloak_error, {
+      throw new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
         originalError: error,
         operation: KeycloakOperationDict.revokeToken,
       });
@@ -294,7 +294,7 @@ export class KeycloakClient {
   /**
    * Introspect a token to check if it's valid
    */
-  async introspectToken(token: string): Promise<TokenIntrospection> {
+  async introspect(token: string): Promise<TokenIntrospection> {
     try {
       const response = await this.fetch(this.config.introspectionEndpoint, {
         method: "POST",
@@ -310,33 +310,39 @@ export class KeycloakClient {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new VaultError(VaultErrorCodeDict.token_introspection_failed, {
-          reason: `Failed to introspect token: ${
-            error.error_description || error.error || response.statusText
-          }`,
-          status: response.status,
-          keycloakError: error.error,
-          operation: KeycloakOperationDict.introspectToken,
-        });
+        throw new AuthManagerError(
+          AuthManagerErrorCodeDict.token_introspection_failed,
+          {
+            reason: `Failed to introspect token: ${
+              error.error_description || error.error || response.statusText
+            }`,
+            status: response.status,
+            keycloakError: error.error,
+            operation: KeycloakOperationDict.introspectToken,
+          }
+        );
       }
 
       return await response.json();
     } catch (error) {
-      if (VaultError.is(error)) {
+      if (AuthManagerError.is(error)) {
         throw error;
       }
       console.error("Error introspecting token:", error);
-      throw new VaultError(VaultErrorCodeDict.token_introspection_failed, {
-        originalError: error,
-        operation: KeycloakOperationDict.introspectToken,
-      });
+      throw new AuthManagerError(
+        AuthManagerErrorCodeDict.token_introspection_failed,
+        {
+          originalError: error,
+          operation: KeycloakOperationDict.introspectToken,
+        }
+      );
     }
   }
 
   /**
    * Get user information using an access token
    */
-  async getUserInfo(accessToken: string): Promise<UserInfo> {
+  async info(accessToken: string): Promise<UserInfo> {
     try {
       const response = await this.fetch(this.config.userinfoEndpoint, {
         method: "GET",
@@ -347,7 +353,7 @@ export class KeycloakClient {
 
       if (!response.ok) {
         const error = await response.text();
-        throw new VaultError(VaultErrorCodeDict.keycloak_error, {
+        throw new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
           reason: `Failed to get user info: ${error || response.statusText}`,
           status: response.status,
           operation: KeycloakOperationDict.getUserInfo,
@@ -356,15 +362,19 @@ export class KeycloakClient {
 
       return await response.json();
     } catch (error) {
-      if (VaultError.is(error)) {
+      if (AuthManagerError.is(error)) {
         throw error;
       }
       console.error("Error getting user info:", error);
-      throw new VaultError(VaultErrorCodeDict.keycloak_error, {
+      throw new AuthManagerError(AuthManagerErrorCodeDict.keycloak_error, {
         originalError: error,
         operation: KeycloakOperationDict.getUserInfo,
       });
     }
+  }
+
+  get conf() {
+    return this.config;
   }
 }
 

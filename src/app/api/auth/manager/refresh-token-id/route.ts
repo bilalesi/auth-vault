@@ -3,7 +3,10 @@ import { GetStorage } from "@/lib/auth/token-vault-factory";
 import { validateRequest } from "@/lib/auth/validate-token";
 import { VaultTokenTypeDict } from "@/lib/auth/token-vault-interface";
 import { throwError, makeResponse, makeVaultError } from "@/lib/auth/response";
-import { VaultError, VaultErrorCodeDict } from "@/lib/auth/vault-errors";
+import {
+  AuthManagerError,
+  AuthManagerErrorCodeDict,
+} from "@/lib/auth/vault-errors";
 
 /**
  * POST /api/auth/token/refresh-id
@@ -22,14 +25,11 @@ import { VaultError, VaultErrorCodeDict } from "@/lib/auth/vault-errors";
  */
 export async function POST(request: NextRequest) {
   try {
-    // Validate Bearer token from Authorization header
     const validation = await validateRequest(request);
 
-    if (!validation.valid || !validation.userId) {
+    if (!validation.valid) {
       return makeVaultError(
-        new VaultError(VaultErrorCodeDict.unauthorized, {
-          userId: validation.userId,
-        })
+        new AuthManagerError(AuthManagerErrorCodeDict.unauthorized)
       );
     }
 
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
 
     if (!refreshTokenEntry) {
       return makeVaultError(
-        new VaultError(VaultErrorCodeDict.no_refresh_token, {
+        new AuthManagerError(AuthManagerErrorCodeDict.no_refresh_token, {
           userId: validation.userId,
         })
       );

@@ -4,7 +4,10 @@ import { GetStorage } from "@/lib/auth/token-vault-factory";
 import { getKeycloakClient } from "@/lib/auth/keycloak-client";
 import { decryptToken } from "@/lib/auth/encryption";
 import { validateRequest } from "@/lib/auth/validate-token";
-import { VaultError, VaultErrorCodeDict } from "@/lib/auth/vault-errors";
+import {
+  AuthManagerError,
+  AuthManagerErrorCodeDict,
+} from "@/lib/auth/vault-errors";
 import { VaultTokenTypeDict } from "@/lib/auth/token-vault-interface";
 import { makeResponse, makeVaultError, throwError } from "@/lib/auth/response";
 import {
@@ -31,7 +34,9 @@ export async function POST(request: NextRequest) {
     // Validate Bearer token from Authorization header
     const validation = await validateRequest(request);
     if (!validation.valid) {
-      return makeVaultError(new VaultError(VaultErrorCodeDict.unauthorized));
+      return makeVaultError(
+        new AuthManagerError(AuthManagerErrorCodeDict.unauthorized)
+      );
     }
 
     // Parse and validate request body
@@ -44,7 +49,7 @@ export async function POST(request: NextRequest) {
 
     if (!tokenEntry) {
       return makeVaultError(
-        new VaultError(VaultErrorCodeDict.token_not_found, {
+        new AuthManagerError(AuthManagerErrorCodeDict.token_not_found, {
           persistentTokenId,
         })
       );
@@ -54,8 +59,19 @@ export async function POST(request: NextRequest) {
     if (isExpired(tokenEntry.expiresAt)) {
       await vault.delete(persistentTokenId);
       return makeVaultError(
-        new VaultError(VaultErrorCodeDict.token_expired, {
+        new AuthManagerError(AuthManagerErrorCodeDict.token_expired, {
           persistentTokenId,
+        })
+      );
+    }
+
+    // Check if token is available (not pending)
+    if (!tokenEntry.encryptedToken || !tokenEntry.iv) {
+      return makeVaultError(
+        new AuthManagerError(AuthManagerErrorCodeDict.token_not_found, {
+          persistentTokenId,
+          reason: "Token is pending and not yet available",
+          status: tokenEntry.status,
         })
       );
     }

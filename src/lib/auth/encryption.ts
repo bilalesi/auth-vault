@@ -121,7 +121,7 @@
  */
 
 import { randomBytes, createCipheriv, createDecipheriv } from "crypto";
-import { VaultError, VaultErrorCodeDict } from "./vault-errors";
+import { AuthManagerError, AuthManagerErrorCodeDict } from "./vault-errors";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16; // 16 bytes for AES
@@ -135,7 +135,7 @@ const KEY_LENGTH = 32; // 32 bytes for AES-256
  * The key must be a 64-character hex string (32 bytes).
  *
  * @returns Buffer containing the encryption key
- * @throws {VaultError} If key is missing or invalid format
+ * @throws {AuthManagerError} If key is missing or invalid format
  *
  * @example
  * ```typescript
@@ -148,7 +148,7 @@ function getEncryptionKey(): Buffer {
   const key = process.env.TOKEN_VAULT_ENCRYPTION_KEY;
 
   if (!key) {
-    throw new VaultError(VaultErrorCodeDict.encryption_failed, {
+    throw new AuthManagerError(AuthManagerErrorCodeDict.encryption_failed, {
       reason: "TOKEN_VAULT_ENCRYPTION_KEY environment variable is not set",
       operation: "getEncryptionKey",
     });
@@ -158,7 +158,7 @@ function getEncryptionKey(): Buffer {
   const keyBuffer = Buffer.from(key, "hex");
 
   if (keyBuffer.length !== KEY_LENGTH) {
-    throw new VaultError(VaultErrorCodeDict.encryption_failed, {
+    throw new AuthManagerError(AuthManagerErrorCodeDict.encryption_failed, {
       reason: `Encryption key must be ${KEY_LENGTH} bytes (${
         KEY_LENGTH * 2
       } hex characters). Current key is ${keyBuffer.length} bytes.`,
@@ -210,7 +210,7 @@ export function generateIV(): string {
  * @param token - The plaintext token to encrypt (typically a JWT refresh token)
  * @param iv - Initialization vector as 32-character hex string (from `generateIV()`)
  * @returns Encrypted token as hex string with auth tag appended
- * @throws {VaultError} If encryption fails or IV is invalid
+ * @throws {AuthManagerError} If encryption fails or IV is invalid
  *
  * @example
  * ```typescript
@@ -247,7 +247,7 @@ export function encryptToken(token: string, iv: string): string {
     const ivBuffer = Buffer.from(iv, "hex");
 
     if (ivBuffer.length !== IV_LENGTH) {
-      throw new VaultError(VaultErrorCodeDict.encryption_failed, {
+      throw new AuthManagerError(AuthManagerErrorCodeDict.encryption_failed, {
         reason: `IV must be ${IV_LENGTH} bytes (${
           IV_LENGTH * 2
         } hex characters)`,
@@ -267,12 +267,12 @@ export function encryptToken(token: string, iv: string): string {
 
     return encrypted;
   } catch (error) {
-    if (VaultError.is(error)) {
+    if (AuthManagerError.is(error)) {
       throw error;
     }
 
     console.error("Error encrypting token:", error);
-    throw new VaultError(VaultErrorCodeDict.encryption_failed, {
+    throw new AuthManagerError(AuthManagerErrorCodeDict.encryption_failed, {
       originalError: error,
       operation: "encryptToken",
     });
@@ -293,7 +293,7 @@ export function encryptToken(token: string, iv: string): string {
  * @param encryptedToken - The encrypted token as hex string (with auth tag appended)
  * @param iv - The same initialization vector used during encryption (32-char hex string)
  * @returns Decrypted plaintext token
- * @throws {VaultError} If decryption fails, auth tag invalid, or data tampered
+ * @throws {AuthManagerError} If decryption fails, auth tag invalid, or data tampered
  *
  * @example
  * ```typescript
@@ -343,7 +343,7 @@ export function decryptToken(encryptedToken: string, iv: string): string {
     const ivBuffer = Buffer.from(iv, "hex");
 
     if (ivBuffer.length !== IV_LENGTH) {
-      throw new VaultError(VaultErrorCodeDict.decryption_failed, {
+      throw new AuthManagerError(AuthManagerErrorCodeDict.decryption_failed, {
         reason: `IV must be ${IV_LENGTH} bytes (${
           IV_LENGTH * 2
         } hex characters)`,
@@ -358,7 +358,7 @@ export function decryptToken(encryptedToken: string, iv: string): string {
     const authTag = Buffer.from(encryptedToken.slice(authTagStart), "hex");
 
     if (authTag.length !== AUTH_TAG_LENGTH) {
-      throw new VaultError(VaultErrorCodeDict.decryption_failed, {
+      throw new AuthManagerError(AuthManagerErrorCodeDict.decryption_failed, {
         reason: "Invalid auth tag length - data may be corrupted",
         expectedLength: AUTH_TAG_LENGTH,
         actualLength: authTag.length,
@@ -374,12 +374,12 @@ export function decryptToken(encryptedToken: string, iv: string): string {
 
     return decrypted;
   } catch (error) {
-    if (VaultError.is(error)) {
+    if (AuthManagerError.is(error)) {
       throw error;
     }
 
     console.error("Error decrypting token:", error);
-    throw new VaultError(VaultErrorCodeDict.decryption_failed, {
+    throw new AuthManagerError(AuthManagerErrorCodeDict.decryption_failed, {
       originalError: error,
       operation: "decryptToken",
       hint: "Data may be corrupted, tampered with, or encrypted with a different key",
@@ -396,7 +396,7 @@ export function decryptToken(encryptedToken: string, iv: string): string {
  * Useful for startup validation to fail fast if configuration is wrong.
  *
  * @returns true if valid
- * @throws {VaultError} If key is missing or invalid format
+ * @throws {AuthManagerError} If key is missing or invalid format
  *
  * @example
  * ```typescript

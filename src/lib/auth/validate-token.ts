@@ -1,9 +1,9 @@
 import { NextRequest } from "next/server";
 import { getKeycloakClient } from "./keycloak-client";
 import {
-  VaultError,
-  VaultErrorCodeDict,
-  VaultOperationDict,
+  AuthManagerError,
+  AuthManagerErrorCodeDict,
+  AuthManagerOperationDict,
 } from "./vault-errors";
 
 /**
@@ -26,7 +26,7 @@ export function extractBearerToken(request: NextRequest): string | null {
 
 /**
  * Validate access token with Keycloak and return user info
- * @throws {VaultError} if token is invalid or validation fails
+ * @throws {AuthManagerError} if token is invalid or validation fails
  */
 export async function validateAccessToken(accessToken: string): Promise<{
   userId: string;
@@ -35,18 +35,16 @@ export async function validateAccessToken(accessToken: string): Promise<{
 }> {
   try {
     const keycloakClient = getKeycloakClient();
-
-    // Introspect the token to validate it
-    const introspection = await keycloakClient.introspectToken(accessToken);
+    const introspection = await keycloakClient.introspect(accessToken);
 
     if (!introspection.active) {
-      throw new VaultError(VaultErrorCodeDict.token_not_active, {
-        operation: VaultOperationDict.introspect_token,
+      throw new AuthManagerError(AuthManagerErrorCodeDict.token_not_active, {
+        operation: AuthManagerOperationDict.introspect_token,
       });
     }
 
     // Get user info from the token
-    const userInfo = await keycloakClient.getUserInfo(accessToken);
+    const userInfo = await keycloakClient.info(accessToken);
 
     return {
       userId: userInfo.sub,
@@ -54,30 +52,41 @@ export async function validateAccessToken(accessToken: string): Promise<{
       username: userInfo.preferred_username,
     };
   } catch (error) {
-    if (VaultError.is(error)) {
+    if (AuthManagerError.is(error)) {
       throw error;
     }
 
     console.error("error validating access token:", error);
-    throw new VaultError(VaultErrorCodeDict.token_introspection_failed, {
-      operation: VaultOperationDict.introspect_token,
-      originalError: error,
-    });
+    throw new AuthManagerError(
+      AuthManagerErrorCodeDict.token_introspection_failed,
+      {
+        operation: AuthManagerOperationDict.introspect_token,
+        originalError: error,
+      }
+    );
   }
 }
+
+type TValidation =
+  | {
+      valid: true;
+      userId: string;
+      email?: string;
+      username?: string;
+      accessToken: string;
+    }
+  | {
+      valid: false;
+      error: string;
+    };
 
 /**
  * Middleware helper to validate Bearer token from request
  * Returns validation result with error info instead of throwing
  */
-export async function validateRequest(request: NextRequest): Promise<{
-  valid: boolean;
-  userId?: string;
-  email?: string;
-  username?: string;
-  accessToken?: string;
-  error?: string;
-}> {
+export async function validateRequest(
+  request: NextRequest
+): Promise<TValidation> {
   try {
     const accessToken = extractBearerToken(request);
 
@@ -96,7 +105,7 @@ export async function validateRequest(request: NextRequest): Promise<{
       accessToken,
     };
   } catch (error) {
-    if (VaultError.is(error)) {
+    if (AuthManagerError.is(error)) {
       return {
         valid: false,
         error: error.msg(),
