@@ -121,7 +121,7 @@
  */
 
 import { randomBytes, createCipheriv, createDecipheriv } from "crypto";
-import { AuthManagerError } from "./vault-errors";
+import { AuthManagerError, AuthManagerErrorDict } from "./vault-errors";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16; // 16 bytes for AES
@@ -148,7 +148,7 @@ function getEncryptionKey(): Buffer {
   const key = process.env.TOKEN_VAULT_ENCRYPTION_KEY;
 
   if (!key) {
-    throw new AuthManagerError("encryption_failed", {
+    throw new AuthManagerError(AuthManagerErrorDict.encryption_failed.code, {
       reason: "TOKEN_VAULT_ENCRYPTION_KEY environment variable is not set",
       operation: "getEncryptionKey",
     });
@@ -158,7 +158,7 @@ function getEncryptionKey(): Buffer {
   const keyBuffer = Buffer.from(key, "hex");
 
   if (keyBuffer.length !== KEY_LENGTH) {
-    throw new AuthManagerError("encryption_failed", {
+    throw new AuthManagerError(AuthManagerErrorDict.encryption_failed.code, {
       reason: `Encryption key must be ${KEY_LENGTH} bytes (${
         KEY_LENGTH * 2
       } hex characters). Current key is ${keyBuffer.length} bytes.`,
@@ -247,7 +247,7 @@ export function encryptToken(token: string, iv: string): string {
     const ivBuffer = Buffer.from(iv, "hex");
 
     if (ivBuffer.length !== IV_LENGTH) {
-      throw new AuthManagerError("encryption_failed", {
+      throw new AuthManagerError(AuthManagerErrorDict.encryption_failed.code, {
         reason: `IV must be ${IV_LENGTH} bytes (${
           IV_LENGTH * 2
         } hex characters)`,
@@ -270,8 +270,6 @@ export function encryptToken(token: string, iv: string): string {
     if (AuthManagerError.is(error)) {
       throw error;
     }
-
-    console.error("Error encrypting token:", error);
     throw new AuthManagerError("encryption_failed", {
       originalError: error,
       operation: "encryptToken",
@@ -343,7 +341,7 @@ export function decryptToken(encryptedToken: string, iv: string): string {
     const ivBuffer = Buffer.from(iv, "hex");
 
     if (ivBuffer.length !== IV_LENGTH) {
-      throw new AuthManagerError("decryption_failed", {
+      throw new AuthManagerError(AuthManagerErrorDict.decryption_failed.code, {
         reason: `IV must be ${IV_LENGTH} bytes (${
           IV_LENGTH * 2
         } hex characters)`,
@@ -358,7 +356,7 @@ export function decryptToken(encryptedToken: string, iv: string): string {
     const authTag = Buffer.from(encryptedToken.slice(authTagStart), "hex");
 
     if (authTag.length !== AUTH_TAG_LENGTH) {
-      throw new AuthManagerError("decryption_failed", {
+      throw new AuthManagerError(AuthManagerErrorDict.decryption_failed.code, {
         reason: "Invalid auth tag length - data may be corrupted",
         expectedLength: AUTH_TAG_LENGTH,
         actualLength: authTag.length,
@@ -379,59 +377,10 @@ export function decryptToken(encryptedToken: string, iv: string): string {
     }
 
     console.error("Error decrypting token:", error);
-    throw new AuthManagerError("decryption_failed", {
+    throw new AuthManagerError(AuthManagerErrorDict.decryption_failed.code, {
       originalError: error,
       operation: "decryptToken",
       hint: "Data may be corrupted, tampered with, or encrypted with a different key",
     });
   }
-}
-
-/**
- * Validate encryption key format
- *
- * Checks if the TOKEN_VAULT_ENCRYPTION_KEY environment variable is set
- * and has the correct format (64 hex characters = 32 bytes).
- *
- * Useful for startup validation to fail fast if configuration is wrong.
- *
- * @returns true if valid
- * @throws {AuthManagerError} If key is missing or invalid format
- *
- * @example
- * ```typescript
- * // Validate at application startup
- * try {
- *   validateEncryptionKey();
- *   console.log('✓ Encryption key is valid');
- * } catch (error) {
- *   console.error('✗ Invalid encryption key:', error.message);
- *   process.exit(1);
- * }
- * ```
- *
- * @example
- * ```typescript
- * // Use in health check endpoint
- * export async function GET() {
- *   const checks = {
- *     database: await checkDatabase(),
- *     redis: await checkRedis(),
- *     encryption: false
- *   };
- *
- *   try {
- *     validateEncryptionKey();
- *     checks.encryption = true;
- *   } catch (error) {
- *     console.error('Encryption key invalid:', error);
- *   }
- *
- *   return Response.json(checks);
- * }
- * ```
- */
-export function validateEncryptionKey(): boolean {
-  getEncryptionKey();
-  return true;
 }

@@ -1,11 +1,14 @@
 import Redis from "ioredis";
-import type {
-  IStorage,
-  TokenVaultEntry,
-  VaultTokenType,
+import {
+  AuthManagerTokenTypeDict,
+  OfflineTokenStatusDict,
+  type IStorage,
+  type TokenVaultEntry,
+  type TAuthManagerTokenType,
+  type OfflineTokenStatus,
 } from "./token-vault-interface";
 import { encryptToken, decryptToken, generateIV } from "./encryption";
-import { generatePersistentTokenId } from "./uuid";
+import { makeUUID } from "./uuid";
 import {
   AuthManagerError,
   AuthManagerErrorDict,
@@ -20,7 +23,7 @@ import { getTTLSeconds, isExpired } from "./date-utils";
 interface RedisTokenEntry {
   id: string;
   userId: string;
-  tokenType: VaultTokenType;
+  tokenType: TAuthManagerTokenType;
   encryptedToken: string | null;
   iv: string | null;
   createdAt: string; // ISO string
@@ -28,7 +31,8 @@ interface RedisTokenEntry {
   metadata?: Record<string, any>;
   status?: string;
   taskId?: string;
-  stateToken?: string;
+  ackState?: string;
+  sessionState?: string;
 }
 
 /**
@@ -73,9 +77,6 @@ function getRedisClient(): Redis {
   return redisInstance;
 }
 
-/**
- * Redis implementation of TokenVault using ioredis
- */
 export class RedisStorage implements IStorage {
   private redis: Redis;
 
@@ -83,37 +84,32 @@ export class RedisStorage implements IStorage {
     this.redis = getRedisClient();
   }
 
-  /**
-   * Get Redis key for a token
-   */
   private getTokenKey(tokenId: string): string {
     return `token:${tokenId}`;
   }
 
-  /**
-   * Get Redis key for user tokens index
-   */
   private getUserTokensKey(userId: string): string {
     return `user:${userId}:tokens`;
   }
 
-  /**
-   * Get Redis key for state token index
-   */
-  private getStateTokenKey(stateToken: string): string {
-    return `state:${stateToken}`;
+  private getAckStateKey(ackState: string): string {
+    return `ackState:${ackState}`;
+  }
+
+  private getUserRefreshTokenKey(userId: string): string {
+    return `user:${userId}:refresh`;
   }
 
   async create(
     userId: string,
     token: string,
-    type: VaultTokenType,
+    type: TAuthManagerTokenType,
     expiresAt: Date,
     metadata?: Record<string, any>,
     tokenId?: string
   ): Promise<string> {
     try {
-      const id = tokenId || generatePersistentTokenId();
+      const id = tokenId || makeUUID();
       const iv = generateIV();
       const encryptedToken = encryptToken(token, iv);
 
@@ -131,11 +127,7 @@ export class RedisStorage implements IStorage {
       const tokenKey = this.getTokenKey(id);
       const userTokensKey = this.getUserTokensKey(userId);
       const ttl = getTTLSeconds(expiresAt);
-
-      // Store token with TTL
       await this.redis.setex(tokenKey, ttl, JSON.stringify(entry));
-
-      // Add token ID to user's token set (with same TTL)
       await this.redis.sadd(userTokensKey, id);
       await this.redis.expire(userTokensKey, ttl);
 
@@ -162,14 +154,12 @@ export class RedisStorage implements IStorage {
 
       const entry: RedisTokenEntry = JSON.parse(data);
 
-      // Check if token has expired
       const expiresAt = new Date(entry.expiresAt);
       if (isExpired(expiresAt)) {
         await this.delete(tokenId);
         return null;
       }
 
-      // Decrypt the token if it exists
       const decryptedToken =
         entry.encryptedToken && entry.iv
           ? decryptToken(entry.encryptedToken, entry.iv)
@@ -179,14 +169,15 @@ export class RedisStorage implements IStorage {
         id: entry.id,
         userId: entry.userId,
         tokenType: entry.tokenType,
-        encryptedToken: decryptedToken, // Return decrypted token
+        encryptedToken: decryptedToken,
         iv: entry.iv,
         createdAt: new Date(entry.createdAt),
         expiresAt: new Date(entry.expiresAt),
         metadata: entry.metadata,
         status: entry.status as any,
         taskId: entry.taskId,
-        stateToken: entry.stateToken,
+        ackState: entry.ackState,
+        sessionState: entry.sessionState,
       };
     } catch (error) {
       throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
@@ -201,18 +192,16 @@ export class RedisStorage implements IStorage {
   async delete(tokenId: string): Promise<void> {
     try {
       const tokenKey = this.getTokenKey(tokenId);
-
-      // Get the entry to find userId
       const data = await this.redis.get(tokenKey);
+
       if (data) {
         const entry: RedisTokenEntry = JSON.parse(data);
         const userTokensKey = this.getUserTokensKey(entry.userId);
 
-        // Remove from user's token set
+        // remove from user's token set
         await this.redis.srem(userTokensKey, tokenId);
       }
 
-      // Delete the token
       await this.redis.del(tokenKey);
     } catch (error) {
       throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
@@ -225,31 +214,28 @@ export class RedisStorage implements IStorage {
   }
 
   async cleanup(): Promise<number> {
-    // Redis automatically handles expiration with TTL
-    // This method is a no-op for Redis but kept for interface compatibility
+    // redis auto handles expiration with ttl
+    // this method is a no-op for Redis but kept for interface compatibility
     console.log("Redis cleanup: TTL handles expiration automatically");
     return 0;
   }
 
-  async getUserTokens(userId: string): Promise<TokenVaultEntry[]> {
+  async getUserRefreshToken(userId: string): Promise<TokenVaultEntry | null> {
     try {
-      const userTokensKey = this.getUserTokensKey(userId);
-      const tokenIds = await this.redis.smembers(userTokensKey);
+      const userRefreshKey = this.getUserRefreshTokenKey(userId);
+      const tokenId = await this.redis.get(userRefreshKey);
 
-      if (!tokenIds || tokenIds.length === 0) {
-        return [];
+      if (!tokenId) {
+        return null;
       }
 
-      const tokens: TokenVaultEntry[] = [];
+      const entry = await this.retrieve(tokenId);
 
-      for (const tokenId of tokenIds) {
-        const entry = await this.retrieve(tokenId);
-        if (entry) {
-          tokens.push(entry);
-        }
+      if (entry && entry.tokenType === AuthManagerTokenTypeDict.Refresh) {
+        return entry;
       }
 
-      return tokens;
+      return null;
     } catch (error) {
       throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
         operation: AuthManagerOperationDict.get_user_tokens,
@@ -263,43 +249,43 @@ export class RedisStorage implements IStorage {
   async makePendingOfflineToken(
     userId: string,
     taskId: string,
-    stateToken: string,
+    ackState: string | null,
     expiresAt: Date,
     metadata?: Record<string, any>
   ): Promise<string> {
     try {
-      const id = generatePersistentTokenId();
+      const id = makeUUID();
 
       const entry: RedisTokenEntry = {
         id,
         userId,
-        tokenType: "offline",
+        tokenType: AuthManagerTokenTypeDict.Offline,
         encryptedToken: null,
         iv: null,
         createdAt: new Date().toISOString(),
         expiresAt: expiresAt.toISOString(),
         metadata,
-        status: "pending",
+        status: OfflineTokenStatusDict.Pending,
         taskId,
-        stateToken,
+        ackState: ackState || undefined,
       };
 
       const tokenKey = this.getTokenKey(id);
       const userTokensKey = this.getUserTokensKey(userId);
-      const stateKey = this.getStateTokenKey(stateToken);
+      const ackStateKey = ackState ? this.getAckStateKey(ackState) : null;
 
-      // Calculate TTL in seconds
       const ttl = getTTLSeconds(expiresAt);
 
-      // Store token with TTL
       await this.redis.setex(tokenKey, ttl, JSON.stringify(entry));
 
-      // Add token ID to user's token set
+      // add token id to user's token set
       await this.redis.sadd(userTokensKey, id);
       await this.redis.expire(userTokensKey, ttl);
 
-      // Create state token index pointing to token ID
-      await this.redis.setex(stateKey, ttl, id);
+      // create ack state index pointing to token id
+      if (ackStateKey) {
+        await this.redis.setex(ackStateKey, ttl, id);
+      }
 
       return id;
     } catch (error) {
@@ -313,14 +299,15 @@ export class RedisStorage implements IStorage {
   }
 
   async updateOfflineTokenByState(
-    stateToken: string,
+    ackState: string,
     token: string | null,
-    status: any
+    status: OfflineTokenStatus,
+    sessionState?: string
   ): Promise<TokenVaultEntry | null> {
     try {
-      // Find token ID by state token
-      const stateKey = this.getStateTokenKey(stateToken);
-      const tokenId = await this.redis.get(stateKey);
+      // Find token ID by ack state
+      const ackStateKey = this.getAckStateKey(ackState);
+      const tokenId = await this.redis.get(ackStateKey);
 
       if (!tokenId) {
         return null;
@@ -345,12 +332,22 @@ export class RedisStorage implements IStorage {
         encryptedToken = encryptToken(token, iv);
       }
 
+      // Merge metadata: append new data to existing
+      const existingMetadata = entry.metadata || {};
+      const mergedMetadata = {
+        ...existingMetadata,
+        tokenActivatedAt: new Date().toISOString(),
+        status,
+      };
+
       // Update entry
       const updatedEntry: RedisTokenEntry = {
         ...entry,
         encryptedToken,
         iv,
         status,
+        sessionState: sessionState || entry.sessionState,
+        metadata: mergedMetadata,
       };
 
       // Calculate remaining TTL
@@ -370,7 +367,8 @@ export class RedisStorage implements IStorage {
         metadata: updatedEntry.metadata,
         status: status as any,
         taskId: updatedEntry.taskId,
-        stateToken: updatedEntry.stateToken,
+        ackState: updatedEntry.ackState,
+        sessionState: sessionState || entry.sessionState,
       };
     } catch (error) {
       throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
@@ -381,17 +379,15 @@ export class RedisStorage implements IStorage {
     }
   }
 
-  async getByStateToken(stateToken: string): Promise<TokenVaultEntry | null> {
+  async getByAckState(ackState: string): Promise<TokenVaultEntry | null> {
     try {
-      // Find token ID by state token
-      const stateKey = this.getStateTokenKey(stateToken);
-      const tokenId = await this.redis.get(stateKey);
+      const ackStateKey = this.getAckStateKey(ackState);
+      const tokenId = await this.redis.get(ackStateKey);
 
       if (!tokenId) {
         return null;
       }
 
-      // Retrieve the token entry
       return await this.retrieve(tokenId);
     } catch (error) {
       throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
@@ -402,9 +398,8 @@ export class RedisStorage implements IStorage {
     }
   }
 
-  async updateStateToken(tokenId: string, stateToken: string): Promise<void> {
+  async updateAckState(tokenId: string, ackState: string): Promise<void> {
     try {
-      // Get existing entry
       const tokenKey = this.getTokenKey(tokenId);
       const data = await this.redis.get(tokenKey);
 
@@ -416,21 +411,17 @@ export class RedisStorage implements IStorage {
 
       const entry: RedisTokenEntry = JSON.parse(data);
 
-      // Update entry with state token
       const updatedEntry: RedisTokenEntry = {
         ...entry,
-        stateToken,
+        ackState,
       };
 
-      // Calculate remaining TTL
       const ttl = getTTLSeconds(new Date(entry.expiresAt));
 
-      // Store updated entry
       await this.redis.setex(tokenKey, ttl, JSON.stringify(updatedEntry));
 
-      // Create state token index
-      const stateKey = this.getStateTokenKey(stateToken);
-      await this.redis.setex(stateKey, ttl, tokenId);
+      const ackStateKey = this.getAckStateKey(ackState);
+      await this.redis.setex(ackStateKey, ttl, tokenId);
     } catch (error) {
       if (AuthManagerError.is(error)) {
         throw error;
@@ -438,6 +429,92 @@ export class RedisStorage implements IStorage {
       throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
         operation: AuthManagerOperationDict.store,
         persistentTokenId: tokenId,
+        storageType: AuthManagerStorageTypeDict.redis,
+        originalError: error,
+      });
+    }
+  }
+
+  async upsertRefreshToken(
+    userId: string,
+    token: string,
+    expiresAt: Date,
+    sessionState?: string,
+    metadata?: Record<string, any>
+  ): Promise<string> {
+    try {
+      const userRefreshKey = this.getUserRefreshTokenKey(userId);
+      const existingTokenId = await this.redis.get(userRefreshKey);
+
+      if (existingTokenId) {
+        const iv = generateIV();
+        const encryptedToken = encryptToken(token, iv);
+
+        const tokenKey = this.getTokenKey(existingTokenId);
+        const data = await this.redis.get(tokenKey);
+
+        if (data) {
+          const entry: RedisTokenEntry = JSON.parse(data);
+
+          const existingMetadata = entry.metadata || {};
+          const mergedMetadata = metadata
+            ? {
+                ...existingMetadata,
+                ...metadata,
+                updatedAt: new Date().toISOString(),
+              }
+            : existingMetadata;
+
+          const updatedEntry: RedisTokenEntry = {
+            ...entry,
+            encryptedToken,
+            iv,
+            expiresAt: expiresAt.toISOString(),
+            sessionState: sessionState || entry.sessionState,
+            metadata: mergedMetadata,
+          };
+
+          const ttl = getTTLSeconds(expiresAt);
+          await this.redis.setex(tokenKey, ttl, JSON.stringify(updatedEntry));
+          await this.redis.setex(userRefreshKey, ttl, existingTokenId);
+
+          console.log("Refresh token updated for user:", userId);
+          return existingTokenId;
+        }
+      }
+
+      const id = makeUUID();
+      const iv = generateIV();
+      const encryptedToken = encryptToken(token, iv);
+
+      const entry: RedisTokenEntry = {
+        id,
+        userId,
+        tokenType: AuthManagerTokenTypeDict.Refresh,
+        encryptedToken,
+        iv,
+        createdAt: new Date().toISOString(),
+        expiresAt: expiresAt.toISOString(),
+        metadata,
+        sessionState,
+      };
+
+      const tokenKey = this.getTokenKey(id);
+      const userTokensKey = this.getUserTokensKey(userId);
+
+      const ttl = getTTLSeconds(expiresAt);
+
+      await this.redis.setex(tokenKey, ttl, JSON.stringify(entry));
+      await this.redis.sadd(userTokensKey, id);
+      await this.redis.expire(userTokensKey, ttl);
+      await this.redis.setex(userRefreshKey, ttl, id);
+
+      console.log("Refresh token created for user:", userId);
+      return id;
+    } catch (error) {
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
+        operation: AuthManagerOperationDict.store,
+        userId,
         storageType: AuthManagerStorageTypeDict.redis,
         originalError: error,
       });

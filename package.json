@@ -6,7 +6,20 @@
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:pull": "drizzle-kit pull",
+    "db:studio": "drizzle-kit studio",
+    "db:drop": "drizzle-kit drop",
+    "db:check": "drizzle-kit check",
+    "db:up": "drizzle-kit up",
+    "db:seed": "tsx scripts/seed-db.ts",
+    "db:reset": "tsx scripts/reset-db.ts",
+    "db:status": "tsx scripts/check-db.ts",
+    "db:setup": "npm run db:generate && npm run db:migrate",
+    "db:fresh": "npm run db:reset && npm run db:setup && npm run db:seed"
   },
   "dependencies": {
     "dotenv": "^17.2.3",

@@ -6,14 +6,15 @@ import {
   jsonb,
   index,
   pgEnum,
+  unique,
 } from "drizzle-orm/pg-core";
-import { generatePersistentTokenId } from "../auth/uuid";
+import { makeUUID } from "../auth/uuid";
 
 export const TokenStatusEnum = pgEnum("auth_token_status", [
   "pending",
   "active",
   "failed",
-  "none",
+  "undefined",
 ]);
 
 export const TokenStatusValues = TokenStatusEnum.enumValues;
@@ -26,23 +27,25 @@ export type TTokenTypeEnumValues = (typeof TokenTypeEnumValues)[number];
 export const AuthVault = pgTable(
   "auth_vault",
   {
-    id: uuid("id").primaryKey().default(generatePersistentTokenId()),
-    userId: uuid("user_id").notNull(), // UUID from Keycloak
-    tokenType: TokenTypeEnum().notNull(),
-    encryptedToken: text("encrypted_token"), // Nullable for pending offline tokens
-    iv: text("iv"), // Nullable for pending offline tokens
+    id: uuid("id").primaryKey().default(makeUUID()),
+    userId: uuid("user_id").notNull(),
+    tokenType: TokenTypeEnum("token_type").notNull(),
+    encryptedToken: text("encrypted_token"),
+    iv: text("iv"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     expiresAt: timestamp("expires_at").notNull(),
     metadata: jsonb("metadata"),
-    status: TokenStatusEnum().default("none"),
+    status: TokenStatusEnum(),
     taskId: text("task_id"),
-    stateToken: text("state_token"),
+    ackState: text("ack_state"),
+    sessionState: text("session_state"),
   },
-  (table) => [
-    index("auth_vault_user_id_idx").on(table.userId),
-    index("auth_vault_expires_at_idx").on(table.expiresAt),
-    index("auth_vault_task_id_idx").on(table.taskId),
-    index("auth_vault_state_token_idx").on(table.stateToken),
+  (t) => [
+    index("auth_vault_user_id_token_type_idx").on(t.userId, t.tokenType.desc()),
+    index("auth_vault_expires_at_idx").on(t.expiresAt),
+    index("auth_vault_task_id_idx").on(t.taskId),
+    index("auth_vault_ack_state_idx").on(t.ackState),
+    index("auth_vault_session_state_idx").on(t.sessionState),
   ]
 );
 

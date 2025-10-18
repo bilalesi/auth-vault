@@ -1,7 +1,6 @@
 import { NextRequest } from "next/server";
 import { GetStorage } from "@/lib/auth/token-vault-factory";
 import { validateRequest } from "@/lib/auth/validate-token";
-import { VaultTokenTypeDict } from "@/lib/auth/token-vault-interface";
 import { throwError, makeResponse, makeVaultError } from "@/lib/auth/response";
 import {
   AuthManagerError,
@@ -34,11 +33,7 @@ export async function GET(request: NextRequest) {
     }
 
     const vault = GetStorage();
-    const userTokens = await vault.getUserTokens(validation.userId);
-
-    const entry = userTokens.find(
-      (entry) => entry.tokenType === VaultTokenTypeDict.Refresh
-    );
+    const entry = await vault.getUserRefreshToken(validation.userId);
 
     if (!entry) {
       return makeVaultError(

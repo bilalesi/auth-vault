@@ -7,11 +7,14 @@ import {
 import { makeResponse, makeVaultError, throwError } from "@/lib/auth/response";
 
 /**
- * POST /api/auth/token/access
+ * Handles the GET request for validating a token.
  *
- * Exchanges a persistent token ID for a fresh access token.
- * Works with both refresh tokens and offline tokens.
+ * @param request - The incoming HTTP request of type `NextRequest`.
+ * @returns A promise that resolves to an HTTP response. If the token validation
+ *          fails, it returns an error response with an unauthorized status.
+ *          Otherwise, it returns a successful response.
  *
+ * @throws Will throw an error if an unexpected issue occurs during processing.
  */
 export async function GET(request: NextRequest) {
   try {

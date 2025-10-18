@@ -7,7 +7,15 @@ import {
 } from "./vault-errors";
 
 /**
- * Extract Bearer token from Authorization header
+ * Extracts the Bearer token from the `authorization` header of a Next.js request.
+ *
+ * @param request - The Next.js request object containing headers.
+ * @returns The Bearer token as a string if present and valid, otherwise `null`.
+ *
+ * @remarks
+ * This function expects the `authorization` header to follow the format:
+ * `Bearer <token>`. If the header is missing, improperly formatted, or does not
+ * start with "Bearer", the function will return `null`.
  */
 export function extractBearerToken(request: NextRequest): string | null {
   const authHeader = request.headers.get("authorization");
@@ -25,8 +33,18 @@ export function extractBearerToken(request: NextRequest): string | null {
 }
 
 /**
- * Validate access token with Keycloak and return user info
- * @throws {AuthManagerError} if token is invalid or validation fails
+ * Validates an access token by introspecting it and retrieving user information.
+ *
+ * @param accessToken - The access token to be validated.
+ * @returns A promise that resolves to an object containing the user's ID, and optionally their email and username.
+ *
+ * @throws {AuthManagerError} If the token is not active or introspection fails.
+ * - `AuthManagerErrorDict.token_not_active.code`: Thrown when the token is not active.
+ * - `AuthManagerErrorDict.token_introspection_failed.code`: Thrown when token introspection fails.
+ *
+ * @remarks
+ * This function uses a Keycloak client to introspect the token and fetch user information.
+ * If an error occurs during the process, it is logged and rethrown as an `AuthManagerError`.
  */
 export async function validateAccessToken(accessToken: string): Promise<{
   userId: string;
@@ -81,8 +99,14 @@ type TValidation =
     };
 
 /**
- * Middleware helper to validate Bearer token from request
- * Returns validation result with error info instead of throwing
+ * Validates an incoming request by extracting and verifying the access token.
+ *
+ * @param request - The incoming `NextRequest` object containing the authorization header.
+ * @returns A promise that resolves to a `TValidation` object indicating whether the request is valid.
+ *          - If valid, it includes user information and the access token.
+ *          - If invalid, it includes an error message describing the issue.
+ *
+ * @throws Will handle and return errors from `AuthManagerError` or other unexpected errors.
  */
 export async function validateRequest(
   request: NextRequest

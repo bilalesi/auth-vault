@@ -1,13 +1,10 @@
 import ms from "ms";
 
-/**
- * Token expiration durations (human-readable)
- */
 export const TokenExpirationDict = {
-  access: "1h",
-  refresh: "12h",
-  offline: "10d",
-  session: "10h",
+  Access: "1h",
+  Refresh: "12h",
+  Offline: "10d",
+  Session: "10h",
 } as const;
 
 /**

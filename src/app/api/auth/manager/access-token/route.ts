@@ -8,7 +8,7 @@ import {
   AuthManagerError,
   AuthManagerErrorDict,
 } from "@/lib/auth/vault-errors";
-import { VaultTokenTypeDict } from "@/lib/auth/token-vault-interface";
+import { AuthManagerTokenTypeDict } from "@/lib/auth/token-vault-interface";
 import { makeResponse, makeVaultError, throwError } from "@/lib/auth/response";
 import {
   isExpired,
@@ -21,10 +21,20 @@ const AccessTokenRequestSchema = z.object({
 });
 
 /**
- * POST /api/auth/token/access
+ * Handles the GET request for retrieving and refreshing an access token.
  *
- * Exchanges a persistent token ID for a fresh access token.
- * Works with both refresh tokens and offline tokens.
+ * This function validates the incoming request, retrieves the persistent token
+ * from the storage, checks its validity, and refreshes the access token using
+ * the Keycloak client. If the token is expired or not found, appropriate errors
+ * are returned. If the token is successfully refreshed, the new access token
+ * and its expiration time are returned in the response.
+ *
+ * @param request - The incoming `NextRequest` object containing the request details.
+ * @returns A response object containing the refreshed access token and its expiration time,
+ *          or an error response if the operation fails.
+ *
+ * @throws {AuthManagerError} Throws errors for unauthorized requests, token not found,
+ *                            token expired, or other unexpected issues.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -75,12 +85,10 @@ export async function GET(request: NextRequest) {
     const response = await keycloakClient.refreshAccessToken(token);
 
     if (response.refresh_token) {
-      // it will be deleted in the store
-      // await vault.delete(persistentTokenId);
       const expiresAt =
-        entry.tokenType === VaultTokenTypeDict.Offline
-          ? getExpirationDate(TokenExpirationDict.offline)
-          : getExpirationDate(TokenExpirationDict.refresh);
+        entry.tokenType === AuthManagerTokenTypeDict.Offline
+          ? getExpirationDate(TokenExpirationDict.Offline)
+          : getExpirationDate(TokenExpirationDict.Refresh);
 
       await vault.create(
         entry.userId,

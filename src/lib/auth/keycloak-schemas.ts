@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+export const KeycloakContentType = "application/x-www-form-urlencoded";
 /**
  * Zod schema for Token Response validation
  * Based on OAuth 2.0 RFC 6749 Section 5.1 and OpenID Connect Core 1.0
@@ -15,6 +16,8 @@ export const TokenResponseSchema = z.object({
   session_state: z.string().optional(), // Keycloak specific (with underscore)
   "not-before-policy": z.number().int().optional(), // Keycloak specific (with hyphen!)
 });
+
+export type TokenResponse = z.infer<typeof TokenResponseSchema>;
 
 /**
  * Zod schema for Token Introspection Response
@@ -95,23 +98,3 @@ export const KeycloakErrorSchema = z.object({
   error_description: z.string().optional(),
   error_uri: z.string().url().optional(),
 });
-
-export function parseTokenResponse(data: unknown) {
-  return TokenResponseSchema.parse(data);
-}
-
-export function parseTokenIntrospection(data: unknown) {
-  return TokenIntrospectionSchema.parse(data);
-}
-
-export function parseUserInfo(data: unknown) {
-  return UserInfoSchema.parse(data);
-}
-
-export function parseKeycloakError(data: unknown) {
-  try {
-    return KeycloakErrorSchema.parse(data);
-  } catch {
-    return { error: "unknown_error", error_description: String(data) };
-  }
-}

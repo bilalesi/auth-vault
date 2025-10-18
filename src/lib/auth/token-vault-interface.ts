@@ -1,7 +1,7 @@
 /**
  * Token type dictionary
  */
-export const VaultTokenTypeDict = {
+export const AuthManagerTokenTypeDict = {
   Refresh: "refresh",
   Offline: "offline",
 } as const;
@@ -9,8 +9,8 @@ export const VaultTokenTypeDict = {
 /**
  * Extract token type from dictionary
  */
-export type VaultTokenType =
-  (typeof VaultTokenTypeDict)[keyof typeof VaultTokenTypeDict];
+export type TAuthManagerTokenType =
+  (typeof AuthManagerTokenTypeDict)[keyof typeof AuthManagerTokenTypeDict];
 
 /**
  * Offline token status dictionary
@@ -34,7 +34,7 @@ export type OfflineTokenStatus =
 export interface TokenVaultEntry {
   id: string; // Persistent token ID (UUID)
   userId: string; // User ID from Keycloak
-  tokenType: VaultTokenType; // Type of token
+  tokenType: TAuthManagerTokenType; // Type of token
   encryptedToken: string | null; // AES-256-GCM encrypted token (null for pending)
   iv: string | null; // Initialization vector for decryption (null for pending)
   createdAt: Date; // When the token was stored
@@ -43,7 +43,8 @@ export interface TokenVaultEntry {
   // Offline token specific fields
   status?: OfflineTokenStatus; // Status for offline tokens
   taskId?: string; // External task ID
-  stateToken?: string; // OAuth state token
+  ackState?: string; // Acknowledgment state for OAuth consent flow (renamed from stateToken)
+  sessionState?: string; // Keycloak session state from token response
 }
 
 /**
@@ -64,7 +65,7 @@ export interface IStorage {
   create(
     userId: string,
     token: string,
-    type: VaultTokenType,
+    type: TAuthManagerTokenType,
     expiresAt: Date,
     metadata?: Record<string, any>,
     tokenId?: string
@@ -94,13 +95,13 @@ export interface IStorage {
    * @param userId - User ID
    * @returns Array of token vault entries
    */
-  getUserTokens(userId: string): Promise<TokenVaultEntry[]>;
+  getUserRefreshToken(userId: string): Promise<TokenVaultEntry | null>;
 
   /**
    * Create a pending offline token request
    * @param userId - User ID
    * @param taskId - External task ID
-   * @param stateToken - OAuth state token for consent flow
+   * @param ackState - Acknowledgment state for consent flow
    * @param expiresAt - Expiration date
    * @param metadata - Optional metadata
    * @returns Persistent token ID
@@ -108,35 +109,55 @@ export interface IStorage {
   makePendingOfflineToken(
     userId: string,
     taskId: string,
-    stateToken: string | null,
+    ackState: string | null,
     expiresAt: Date,
     metadata?: Record<string, any>
   ): Promise<string>;
 
   /**
    * Update offline token status and store the actual token
-   * @param stateToken - OAuth state token to identify the request
+   * @param ackState - Acknowledgment state to identify the request
    * @param token - The offline token to store (will be encrypted)
    * @param status - New status (active or failed)
+   * @param sessionState - Keycloak session state from token response
    * @returns Updated token entry or null if not found
    */
   updateOfflineTokenByState(
-    stateToken: string,
+    ackState: string,
     token: string | null,
-    status: OfflineTokenStatus
+    status: OfflineTokenStatus,
+    sessionState?: string
   ): Promise<TokenVaultEntry | null>;
 
   /**
-   * Get offline token by state token
-   * @param stateToken - OAuth state token
+   * Get offline token by acknowledgment state
+   * @param ackState - Acknowledgment state
    * @returns Token vault entry or null if not found
    */
-  getByStateToken(stateToken: string): Promise<TokenVaultEntry | null>;
+  getByAckState(ackState: string): Promise<TokenVaultEntry | null>;
 
   /**
-   * Update state token for a pending offline token request
+   * Update acknowledgment state for a pending offline token request
    * @param tokenId - Persistent token ID
-   * @param stateToken - OAuth state token
+   * @param ackState - Acknowledgment state
    */
-  updateStateToken(tokenId: string, stateToken: string): Promise<void>;
+  updateAckState(tokenId: string, ackState: string): Promise<void>;
+
+  /**
+   * Update or create a refresh token (upsert by userId)
+   * Ensures only one refresh token exists per user
+   * @param userId - User ID
+   * @param token - The refresh token to store (will be encrypted)
+   * @param expiresAt - Expiration date
+   * @param sessionState - Keycloak session state
+   * @param metadata - Optional metadata
+   * @returns Persistent token ID
+   */
+  upsertRefreshToken(
+    userId: string,
+    token: string,
+    expiresAt: Date,
+    sessionState?: string,
+    metadata?: Record<string, any>
+  ): Promise<string>;
 }

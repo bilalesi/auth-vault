@@ -4,7 +4,7 @@ import { getKeycloakClient } from "@/lib/auth/keycloak-client";
 import { GetStorage } from "@/lib/auth/token-vault-factory";
 import { decryptToken } from "@/lib/auth/encryption";
 import { validateRequest } from "@/lib/auth/validate-token";
-import { VaultTokenTypeDict } from "@/lib/auth/token-vault-interface";
+import { AuthManagerTokenTypeDict } from "@/lib/auth/token-vault-interface";
 import { makeResponse, makeVaultError, throwError } from "@/lib/auth/response";
 import { getExpirationDate, TokenExpirationDict } from "@/lib/auth/date-utils";
 import {
@@ -13,15 +13,15 @@ import {
 } from "@/lib/auth/vault-errors";
 
 /**
- * POST /api/auth/manager/offline-token-id
+ * get /api/auth/manager/offline-token-id
  *
- * Requests an offline token from Keycloak and returns a persistent token ID.
+ * requests an offline token from Keycloak and returns a persistent token ID.
  *
  * Note: If user consent is required, this endpoint will fail with a keycloak_error.
  * Users should first call POST /api/auth/manager/offline-consent to get the consent URL,
  * grant consent, and then retry this endpoint.
  *
- * (do not use it)
+ * (do not use it only after discussion with JDC)
  * @deprecated
  */
 export async function GET(request: NextRequest) {
@@ -35,13 +35,9 @@ export async function GET(request: NextRequest) {
     }
     const store = GetStorage();
     const keycloakClient = getKeycloakClient();
-    const userTokens = await store.getUserTokens(validation.userId);
+    const entry = await store.getUserRefreshToken(validation.userId);
 
-    const refreshTokenEntry = userTokens.find(
-      (t) => t.tokenType === VaultTokenTypeDict.Refresh
-    );
-
-    if (!refreshTokenEntry) {
+    if (!entry) {
       return makeVaultError(
         new AuthManagerError(AuthManagerErrorDict.no_refresh_token.code, {
           userId: validation.userId,
@@ -49,7 +45,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (!refreshTokenEntry.encryptedToken || !refreshTokenEntry.iv) {
+    if (!entry.encryptedToken || !entry.iv) {
       return makeVaultError(
         new AuthManagerError(AuthManagerErrorDict.no_refresh_token.code, {
           userId: validation.userId,
@@ -58,10 +54,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const refreshToken = decryptToken(
-      refreshTokenEntry.encryptedToken,
-      refreshTokenEntry.iv
-    );
+    const refreshToken = decryptToken(entry.encryptedToken, entry.iv);
 
     try {
       const offlineTokenResponse = await keycloakClient.requestOfflineToken(
@@ -69,12 +62,12 @@ export async function GET(request: NextRequest) {
       );
 
       if (offlineTokenResponse.refresh_token) {
-        const expiresAt = getExpirationDate(TokenExpirationDict.offline);
+        const expiresAt = getExpirationDate(TokenExpirationDict.Offline);
 
         const persistentTokenId = await store.create(
           validation.userId,
           offlineTokenResponse.refresh_token,
-          VaultTokenTypeDict.Offline,
+          AuthManagerTokenTypeDict.Offline,
           expiresAt,
           {
             email: validation.email,
@@ -107,19 +100,8 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/**
- * DELETE /api/auth/manager/offline-token-id
- *
- * Revokes an offline token by:
- * 1. Retrieving it from the vault
- * 2. Revoking it in Keycloak
- * 3. Deleting it from the vault
- *
- * Requirements: 9.4, 7.1, 7.2, 7.3, 7.4, 7.5
- */
 export async function DELETE(request: NextRequest) {
   try {
-    // Validate Bearer token from Authorization header
     const validation = await validateRequest(request);
 
     if (!validation.valid) {
@@ -128,14 +110,12 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Parse and validate request body
     const body = await request.json();
     const RevokeTokenRequestSchema = z.object({
-      persistentTokenId: z.string().uuid(),
+      persistentTokenId: z.uuid(),
     });
     const { persistentTokenId } = RevokeTokenRequestSchema.parse(body);
 
-    // Retrieve token from vault
     const tokenVault = GetStorage();
     const tokenEntry = await tokenVault.retrieve(persistentTokenId);
 
@@ -147,18 +127,8 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Verify the token belongs to the authenticated user
-    if (tokenEntry.userId !== validation.userId) {
-      return makeVaultError(
-        new AuthManagerError(AuthManagerErrorDict.forbidden.code, {
-          userId: validation.userId,
-          persistentTokenId,
-        })
-      );
-    }
-
-    // Only allow revoking offline tokens (not refresh tokens)
-    if (tokenEntry.tokenType !== VaultTokenTypeDict.Offline) {
+    // only allow revoke op for offline tokens (not refresh tokens)
+    if (tokenEntry.tokenType !== AuthManagerTokenTypeDict.Offline) {
       return makeVaultError(
         new AuthManagerError(AuthManagerErrorDict.invalid_token_type.code, {
           persistentTokenId,
@@ -166,7 +136,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Check if token is available (not pending)
+    // check if token is available (not pending)
     if (!tokenEntry.encryptedToken || !tokenEntry.iv) {
       return makeVaultError(
         new AuthManagerError(AuthManagerErrorDict.invalid_token_type.code, {
@@ -176,22 +146,17 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Decrypt the token
     const token = decryptToken(tokenEntry.encryptedToken, tokenEntry.iv);
-
-    // Get Keycloak client
     const keycloakClient = getKeycloakClient();
 
-    // Revoke token in Keycloak
     try {
       await keycloakClient.revoke(token);
       console.log("Offline token revoked in Keycloak:", persistentTokenId);
     } catch (error) {
       console.error("Error revoking token in Keycloak:", error);
-      // Continue to delete from vault even if Keycloak revocation fails
+      // continue the deletion from vault even if Keycloak revoke failed
     }
 
-    // Delete from vault
     await tokenVault.delete(persistentTokenId);
     console.log("token deleted from vault:", persistentTokenId);
 

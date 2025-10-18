@@ -8,30 +8,25 @@ import {
   AuthManagerOperationDict,
 } from "./vault-errors";
 
-/**
- * Storage type dictionary
- */
 export const StorageTypeDict = {
   pg: "pg",
   redis: "redis",
 } as const;
 
-/**
- * Extract storage type from dictionary
- */
 export type StorageType =
   (typeof StorageTypeDict)[keyof typeof StorageTypeDict];
 
-/**
- * Token Vault singleton instance
- */
 let tokenVaultInstance: IStorage | null = null;
 
 /**
- * Create or get Token Vault instance based on configuration
- * Uses TOKEN_VAULT_STORAGE environment variable to determine implementation
+ * Retrieves the storage instance for the token vault. If an instance already exists,
+ * it returns the existing instance. Otherwise, it initializes a new storage instance
+ * based on the `TOKEN_VAULT_STORAGE` environment variable.
  *
- * @returns TokenVault instance (PostgreSQL or Redis)
+ * @throws {AuthManagerError} If the `TOKEN_VAULT_STORAGE` environment variable is not set
+ * or if the specified storage type is unsupported.
+ *
+ * @returns {IStorage} The storage instance for the token vault.
  */
 export function GetStorage(): IStorage {
   if (tokenVaultInstance) {

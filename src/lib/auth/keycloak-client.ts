@@ -1,3 +1,4 @@
+import { KeycloakContentType } from "./keycloak-schemas";
 import { AuthManagerError, AuthManagerErrorDict } from "./vault-errors";
 
 /**
@@ -9,7 +10,6 @@ import { AuthManagerError, AuthManagerErrorDict } from "./vault-errors";
 export const KeycloakOperationDict = {
   refreshAccessToken: "refreshAccessToken",
   requestOfflineToken: "requestOfflineToken",
-  offlineTokenRefresh: "offlineTokenRefresh",
   revokeToken: "revokeToken",
   introspectToken: "introspectToken",
   getUserInfo: "getUserInfo",
@@ -72,12 +72,9 @@ export interface UserInfo {
   family_name?: string;
 }
 
-/**
- * Keycloak Client for token operations
- */
 export class KeycloakClient {
   private config: KeycloakConfig;
-  private agent: any; // HTTP agent for connection pooling
+  private agent: any;
 
   constructor(config?: Partial<KeycloakConfig>) {
     const issuer = config?.issuer || process.env.KEYCLOAK_ISSUER!;
@@ -102,9 +99,8 @@ export class KeycloakClient {
         `${issuer}/protocol/openid-connect/userinfo`,
     };
 
-    // Configure HTTP agent for connection pooling and keep-alive
+    // configure HTTP agent for connection pooling and keep-alive
     if (typeof window === "undefined") {
-      // Server-side only
       const http = require("http");
       const https = require("https");
 
@@ -122,16 +118,10 @@ export class KeycloakClient {
     }
   }
 
-  /**
-   * Get the HTTP agent for connection pooling
-   */
   private getAgent() {
     return this.agent;
   }
 
-  /**
-   * Make a fetch request with the configured agent
-   */
   private async fetch(url: string, options: RequestInit = {}) {
     const fetchOptions: RequestInit = {
       ...options,
@@ -143,14 +133,22 @@ export class KeycloakClient {
   }
 
   /**
-   * Refresh an access token using a refresh token
+   * Refreshes the access token using the provided refresh token.
+   *
+   * This method sends a POST request to the Keycloak token endpoint with the
+   * necessary parameters to obtain a new access token. If the operation fails,
+   * it throws an `AuthManagerError` with details about the failure.
+   *
+   * @param refreshToken - The refresh token used to obtain a new access token.
+   * @returns A promise that resolves to the new token response.
+   * @throws {AuthManagerError} If the token refresh operation fails or an unexpected error occurs.
    */
   async refreshAccessToken(refreshToken: string): Promise<TokenResponse> {
     try {
       const response = await this.fetch(this.config.tokenEndpoint, {
         method: "POST",
         headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
+          "Content-Type": KeycloakContentType,
         },
         body: new URLSearchParams({
           client_id: this.config.clientId,
@@ -164,7 +162,7 @@ export class KeycloakClient {
         const error = await response.json();
         throw new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
           reason: `Failed to refresh token: ${
-            error.error_description || error.error || response.statusText
+            error.error_description || error.error
           }`,
           status: response.status,
           keycloakError: error.error,
@@ -186,8 +184,15 @@ export class KeycloakClient {
   }
 
   /**
-   * Request an offline token by exchanging a regular refresh token
-   * This requests a new token with offline_access scope for long-running jobs
+   * Requests an offline token from the Keycloak server using a provided refresh token.
+   *
+   * This method exchanges the given refresh token for a new token with the `offline_access` scope,
+   * which allows the token to be long-lived and usable even when the user is not actively logged in.
+   *
+   * @param refreshToken - The refresh token to exchange for an offline token.
+   * @returns A promise that resolves to a `TokenResponse` object containing the new token details.
+   *
+   * @throws {AuthManagerError} If the request fails due to a Keycloak error or other issues.
    */
   async requestOfflineToken(refreshToken: string): Promise<TokenResponse> {
     try {
@@ -196,7 +201,7 @@ export class KeycloakClient {
       const response = await this.fetch(this.config.tokenEndpoint, {
         method: "POST",
         headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
+          "Content-Type": KeycloakContentType,
         },
         body: new URLSearchParams({
           client_id: this.config.clientId,
@@ -237,15 +242,13 @@ export class KeycloakClient {
   }
 
   /**
-   * Exchange an offline token for a new access token
-   */
-  async offlineTokenRefresh(offlineToken: string): Promise<TokenResponse> {
-    // Offline tokens are just long-lived refresh tokens
-    return this.refreshAccessToken(offlineToken);
-  }
-
-  /**
-   * Revoke a token (refresh token or access token)
+   * Revokes a token (either a refresh token or an access token) using the Keycloak revocation endpoint.
+   *
+   * @param token - The token to be revoked.
+   * @param tokenTypeHint - An optional hint about the type of the token being revoked.
+   *                         Can be either "refresh_token" or "access_token".
+   * @returns A promise that resolves when the token is successfully revoked.
+   * @throws {AuthManagerError} If the revocation request fails or an unexpected error occurs.
    */
   async revoke(
     token: string,
@@ -292,7 +295,19 @@ export class KeycloakClient {
   }
 
   /**
-   * Introspect a token to check if it's valid
+   * Introspects a given token using the Keycloak introspection endpoint.
+   *
+   * This method sends a POST request to the configured introspection endpoint
+   * with the provided token, client ID, and client secret. It validates the
+   * token and retrieves its metadata, such as its active status, expiration,
+   * and associated user information.
+   *
+   * @param token - The token to be introspected.
+   * @returns A promise that resolves to the token introspection result, which
+   *          includes details about the token's validity and associated metadata.
+   * @throws {AuthManagerError} If the introspection request fails or the response
+   *         indicates an error. The error contains additional context about the
+   *         failure, such as the reason and HTTP status code.
    */
   async introspect(token: string): Promise<TokenIntrospection> {
     try {
@@ -340,7 +355,14 @@ export class KeycloakClient {
   }
 
   /**
-   * Get user information using an access token
+   * Retrieves user information from the Keycloak server using the provided access token.
+   *
+   * @param accessToken - The access token used to authenticate the request.
+   * @returns A promise that resolves to the user information (`UserInfo`) retrieved from the Keycloak server.
+   * @throws {AuthManagerError} If the request fails or the response is not successful.
+   *         - `AuthManagerErrorDict.keycloak_error.code` is used for errors related to Keycloak operations.
+   *         - Includes details such as the reason for failure, HTTP status, and operation context.
+   * @throws {Error} If an unexpected error occurs during the operation.
    */
   async info(accessToken: string): Promise<UserInfo> {
     try {
@@ -373,18 +395,24 @@ export class KeycloakClient {
     }
   }
 
+  /**
+   * Retrieves the current Keycloak client configuration.
+   *
+   * @returns The configuration object used by the Keycloak client.
+   */
   get conf() {
     return this.config;
   }
 }
 
-/**
- * Singleton instance of KeycloakClient
- */
 let keycloakClientInstance: KeycloakClient | null = null;
 
 /**
- * Get or create a KeycloakClient instance
+ * Retrieves a singleton instance of the KeycloakClient. If the instance does not already exist,
+ * it initializes a new KeycloakClient with the provided configuration.
+ *
+ * @param config - An optional partial configuration object for the KeycloakClient.
+ * @returns The singleton instance of the KeycloakClient.
  */
 export function getKeycloakClient(
   config?: Partial<KeycloakConfig>

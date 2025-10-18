@@ -1,44 +1,22 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import * as schema from "./schema";
+import { AuthVault } from "./schema";
 
-/**
- * PostgreSQL connection singleton
- */
-let db: ReturnType<typeof drizzle> | null = null;
-let pool: Pool | null = null;
+const connectionString = process.env.DATABASE_URL;
 
-/**
- * Get or create database connection
- */
-export function getDb() {
-  if (!db) {
-    const connectionString = process.env.DATABASE_URL;
+const pool = new Pool({
+  connectionString,
+  max: 10,
+  idleTimeoutMillis: 20000,
+  connectionTimeoutMillis: 10000,
+});
 
-    if (!connectionString) {
-      throw new Error("DATABASE_URL environment variable is not set");
-    }
+const db = drizzle({ client: pool, schema: { AuthVault } });
 
-    pool = new Pool({
-      connectionString,
-      max: 10, // Maximum number of connections
-      idleTimeoutMillis: 20000, // Close idle connections after 20 seconds
-      connectionTimeoutMillis: 10000, // Connection timeout in milliseconds
-    });
-
-    db = drizzle(pool, { schema });
+export function makeDb() {
+  if (!db || !connectionString) {
+    throw new Error("DATABASE_URL environment variable is not set");
   }
 
   return db;
-}
-
-/**
- * Close database connection (for cleanup)
- */
-export async function closeDb() {
-  if (pool) {
-    await pool.end();
-    pool = null;
-    db = null;
-  }
 }

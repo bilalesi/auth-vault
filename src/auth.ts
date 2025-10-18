@@ -82,52 +82,41 @@ export async function refreshAccessToken(token: TokenSet): Promise<TokenSet> {
     });
 
     const refreshedTokens = await response.json();
+    console.log("–– – refreshAccessToken – refreshedTokens––", refreshedTokens);
 
     if (!response.ok) {
       throw refreshedTokens;
     }
 
-    const oldRefreshToken = token.refreshToken;
     const newRefreshToken = refreshedTokens.refresh_token ?? token.refreshToken;
 
     token.accessToken = refreshedTokens.access_token;
     token.accessTokenExpires = Date.now() + refreshedTokens.expires_in * 1000;
     token.refreshToken = newRefreshToken;
 
-    // Update refresh token in Token Vault if it changed
-    if (
-      newRefreshToken !== oldRefreshToken &&
-      token.persistentTokenId &&
-      token.user?.id
-    ) {
+    if (token.user?.id) {
       try {
-        const { GetStorage: getTokenVault } = await import(
-          "@/lib/auth/token-vault-factory"
-        );
-        const tokenVault = getTokenVault();
+        const { GetStorage } = await import("@/lib/auth/token-vault-factory");
+        const store = GetStorage();
+        const expiresAt = getExpirationDate(TokenExpirationDict.Refresh);
 
-        // Delete old token and store new one with same persistentTokenId
-        await tokenVault.delete(token.persistentTokenId);
-
-        // Calculate new expiration for refresh tokens
-        const expiresAt = getExpirationDate(TokenExpirationDict.refresh);
-
-        // Store with the same persistentTokenId to maintain consistency
-        await tokenVault.create(
+        const persistentTokenId = await store.upsertRefreshToken(
           token.user.id,
           newRefreshToken,
-          "refresh",
           expiresAt,
+          refreshedTokens.session_state,
           {
-            email: token.user.email,
             name: token.user.name,
-            updatedAt: new Date().toISOString(),
+            lastRefresh: new Date().toISOString(),
+            refreshCount: ((token as any).refreshCount || 0) + 1,
           }
         );
 
-        console.log("Refresh token updated in vault:", token.persistentTokenId);
+        token.persistentTokenId = persistentTokenId;
+        (token as any).refreshCount = ((token as any).refreshCount || 0) + 1;
+        console.log("Refresh token upserted in vault:", persistentTokenId);
       } catch (error) {
-        console.error("Failed to update refresh token in vault:", error);
+        console.error("Failed to upsert refresh token in vault:", error);
         // Don't fail the refresh if vault update fails
       }
     }
@@ -180,6 +169,7 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async jwt({ token, account, user, profile, trigger, session }) {
+      console.log("–– – account––", account);
       // Initial sign in
       if (account && user) {
         token.accessToken = account.access_token;
@@ -194,34 +184,32 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           username: (user as any).username,
         };
-
         // Store refresh token in Token Vault for external services
         if (account.refresh_token && profile?.sub) {
+          console.log("–– – account", account);
           try {
-            const { GetStorage: getTokenVault } = await import(
+            const { GetStorage } = await import(
               "@/lib/auth/token-vault-factory"
             );
-            const tokenVault = getTokenVault();
+            const store = GetStorage();
+            const expiresAt = getExpirationDate(TokenExpirationDict.Refresh);
 
-            // Calculate expiration for refresh tokens
-            const expiresAt = getExpirationDate(TokenExpirationDict.refresh);
-
-            const persistentTokenId = await tokenVault.create(
+            const persistentTokenId = await store.upsertRefreshToken(
               profile.sub,
               account.refresh_token,
-              "refresh",
               expiresAt,
+              account.session_state,
               {
-                email: user.email,
                 name: user.name,
+                provider: account.provider,
+                loginTime: new Date().toISOString(),
               }
             );
 
             token.persistentTokenId = persistentTokenId;
-            console.log("Refresh token stored in vault:", persistentTokenId);
+            console.log("Refresh token upserted in vault:", persistentTokenId);
           } catch (error) {
-            console.error("Failed to store refresh token in vault:", error);
-            // Don't fail the login if vault storage fails
+            console.error("Failed to upsert refresh token in vault:", error);
           }
         }
 

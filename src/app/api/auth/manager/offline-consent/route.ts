@@ -16,11 +16,20 @@ const ConsentUrlRequestSchema = z.object({
 });
 
 /**
- * post /api/auth/manager/offline-consent
+ * Handles the POST request for generating an offline consent URL.
  *
- * generates a keycloak consent url for offline_access scope.
- * creates a pending offline token request in the database with a state token.
- * the state token is used to track the consent flow and update the token later.
+ * This function validates the incoming request, parses the request body,
+ * generates a persistent token, and constructs a consent URL for the user
+ * to grant offline access. The consent URL is returned along with the
+ * persistent token ID and state token.
+ *
+ * @param request - The incoming HTTP request of type `NextRequest`.
+ *
+ * @returns A response containing the consent URL, persistent token ID,
+ *          state token, and a message guiding the user to grant consent.
+ *
+ * @throws Will throw an error if the request validation fails, the body
+ *         parsing fails, or any other operation within the function fails.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -36,7 +45,7 @@ export async function POST(request: NextRequest) {
     const validatedBody = ConsentUrlRequestSchema.parse(body);
 
     const vault = GetStorage();
-    const expiresAt = getExpirationDate(TokenExpirationDict.offline);
+    const expiresAt = getExpirationDate(TokenExpirationDict.Offline);
 
     const persistentTokenId = await vault.makePendingOfflineToken(
       validation.userId,
@@ -56,7 +65,7 @@ export async function POST(request: NextRequest) {
       persistentTokenId,
     });
 
-    await vault.updateStateToken(persistentTokenId, stateToken);
+    await vault.updateAckState(persistentTokenId, stateToken);
 
     const authParams = new URLSearchParams({
       client_id: process.env.KEYCLOAK_CLIENT_ID!,
@@ -64,6 +73,7 @@ export async function POST(request: NextRequest) {
       scope: "openid profile email offline_access",
       redirect_uri: `${process.env.NEXTAUTH_URL}/api/auth/manager/offline-callback`,
       state: stateToken,
+      prompt: "consent", // Force consent screen to appear every time
     });
 
     const consentUrl = `${

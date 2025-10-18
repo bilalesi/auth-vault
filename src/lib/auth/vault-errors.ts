@@ -1,5 +1,17 @@
+import get from "es-toolkit/compat/get";
 import { StatusCodes } from "http-status-codes";
 
+/**
+ * A dictionary of error definitions for the Auth Manager.
+ * Each error includes an HTTP status code, a unique error code, and a descriptive message.
+ *
+ * The error dictionary is structured as a constant object where each key represents
+ * a specific error type, and the value contains the following properties:
+ *
+ * - `http`: The HTTP status code associated with the error.
+ * - `code`: A unique string identifier for the error.
+ * - `message`: A human-readable description of the error.
+ */
 export const AuthManagerErrorDict = {
   encryption_failed: {
     http: StatusCodes.INTERNAL_SERVER_ERROR,
@@ -100,6 +112,10 @@ export const AuthManagerErrorDict = {
 
 export type TAuthManagerCode = keyof typeof AuthManagerErrorDict;
 
+/**
+ * A dictionary of operations supported by the Auth Manager.
+ * Each key represents an operation name, and its value is a string identifier for that operation.
+ */
 export const AuthManagerOperationDict = {
   store: "store",
   retrieve: "retrieve",
@@ -149,7 +165,7 @@ export class AuthManagerError extends Error {
         ? metadata.originalError.message
         : AuthManagerErrorDict[code].message;
 
-    super(message);
+    super(message, { cause: metadata });
 
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, AuthManagerError);
@@ -160,7 +176,6 @@ export class AuthManagerError extends Error {
     this.metadata = { code, ...metadata };
     this.timestamp = new Date();
 
-    // Set the prototype explicitly for proper instanceof checks
     Object.setPrototypeOf(this, AuthManagerError.prototype);
   }
 
@@ -176,7 +191,7 @@ export class AuthManagerError extends Error {
   }
 
   msg(): string {
-    return AuthManagerErrorDict[this.code].message;
+    return get(AuthManagerErrorDict, `${this.code}.message`, "");
   }
 
   static is(error: unknown): error is AuthManagerError {

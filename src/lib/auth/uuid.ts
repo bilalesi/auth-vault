@@ -1,9 +1,10 @@
 import { randomUUID } from "crypto";
 
 /**
- * Generate a unique persistent token ID
- * Uses crypto.randomUUID() for cryptographically secure UUIDs
+ * Generates a new universally unique identifier (UUID).
+ *
+ * @returns {string} A string representation of a UUID.
  */
-export function generatePersistentTokenId(): string {
+export function makeUUID(): string {
   return randomUUID();
 }

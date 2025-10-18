@@ -6,15 +6,12 @@ export default async function Home() {
   const session = await auth();
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-8">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-black p-8">
       <div className="w-full max-w-2xl space-y-8">
         <div className="text-center">
-          <h1 className="text-4xl font-bold tracking-tight text-gray-900">
-            Next.js + Keycloak Authentication
+          <h1 className="text-4xl font-bold tracking-tight text-white">
+            Test AuthManager + TaskManager
           </h1>
-          <p className="mt-4 text-lg text-gray-600">
-            Token management system with NextAuth.js
-          </p>
         </div>
 
         <div className="rounded-lg bg-white p-8 shadow">
@@ -22,10 +19,10 @@ export default async function Home() {
             <div className="space-y-6">
               <div>
                 <h2 className="text-2xl font-semibold text-gray-900">
-                  Welcome back!
+                  Welcome ohoooo!
                 </h2>
                 <p className="mt-2 text-gray-600">
-                  You are signed in as{" "}
+                  You're signed in as{" "}
                   <span className="font-medium">{session.user?.email}</span>
                 </p>
               </div>
@@ -108,18 +105,6 @@ export default async function Home() {
               <SignInButton />
             </div>
           )}
-        </div>
-
-        <div className="rounded-lg bg-blue-50 p-6">
-          <h3 className="text-lg font-medium text-blue-900">
-            Infrastructure Status
-          </h3>
-          <ul className="mt-4 space-y-2 text-sm text-blue-800">
-            <li>✓ Keycloak running on http://localhost:8081/auth</li>
-            <li>✓ PostgreSQL running on localhost:5433</li>
-            <li>✓ NextAuth.js configured with offline_access scope</li>
-            <li>✓ Token refresh mechanism enabled</li>
-          </ul>
         </div>
       </div>
     </div>

@@ -21,12 +21,12 @@ export function generateStateToken(payload: TStateTokenPayload): string {
  * Parse a state token back to payload
  * decodes a base64 state token back to its components.
  *
- * @param stateToken - Base64 encoded state token
+ * @param ackToken - Base64 encoded state token
  * @returns Parsed state token payload or null if invalid
  */
-export function parseStateToken(stateToken: string): TStateTokenPayload | null {
+export function parseAckState(ackToken: string): TStateTokenPayload | null {
   try {
-    const decoded = Buffer.from(stateToken, "base64url").toString("utf-8");
+    const decoded = Buffer.from(ackToken, "base64url").toString("utf-8");
     const parts = decoded.split(":");
 
     if (parts.length !== 3) {
