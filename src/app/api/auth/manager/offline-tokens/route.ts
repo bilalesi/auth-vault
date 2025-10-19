@@ -7,6 +7,29 @@ import {
   AuthManagerErrorDict,
 } from "@/lib/auth/vault-errors";
 
+/**
+ * GET /api/auth/manager/offline-tokens
+ *
+ * Retrieves all offline tokens for the authenticated user.
+ * Returns token metadata without exposing encrypted tokens or IVs.
+ *
+ * @param request - NextRequest containing:
+ *   - headers: Authorization with access token
+ *
+ * @returns Response with:
+ *   - tokens: Array of token metadata objects
+ *   - count: Total number of offline tokens
+ *
+ * @throws {AuthManagerError} If user is not authenticated
+ *
+ * @example
+ * ```typescript
+ * const response = await fetch('/api/auth/manager/offline-tokens', {
+ *   headers: { Authorization: `Bearer ${accessToken}` }
+ * });
+ * const { tokens, count } = await response.json();
+ * ```
+ */
 export async function GET(request: NextRequest) {
   try {
     const validation = await validateRequest(request);

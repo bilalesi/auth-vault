@@ -167,4 +167,16 @@ export interface IStorage {
     tokenHash: string,
     excludeTokenId: string
   ): Promise<boolean>;
+
+  /**
+   * Get all tokens with a specific session state (excluding a specific token ID)
+   * Used to determine if other tokens share the same Keycloak session
+   * @param sessionState - Keycloak session state
+   * @param excludeTokenId - Token ID to exclude from the search
+   * @returns Array of token vault entries with matching session state
+   */
+  retrieveBySessionState(
+    sessionState: string,
+    excludeTokenId: string
+  ): Promise<TokenVaultEntry[]>;
 }

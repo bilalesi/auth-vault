@@ -433,6 +433,47 @@ export class PgStorage implements IStorage {
     }
   }
 
+  async retrieveBySessionState(
+    sessionState: string,
+    excludeTokenId: string
+  ): Promise<TokenVaultEntry[]> {
+    try {
+      const rows = await this.db.query.AuthVault.findMany({
+        where: (f, op) =>
+          op.and(
+            op.eq(f.sessionState, sessionState),
+            op.ne(f.id, excludeTokenId)
+          ),
+        orderBy: (f, op) => [op.desc(f.createdAt)],
+      });
+
+      return rows.map((row) => ({
+        id: row.id,
+        userId: row.userId,
+        tokenType: row.tokenType as TAuthManagerTokenType,
+        encryptedToken: row.encryptedToken,
+        iv: row.iv,
+        tokenHash: row.tokenHash || undefined,
+        createdAt: row.createdAt,
+        expiresAt: row.expiresAt,
+        metadata: (row.metadata as Record<string, any>) || undefined,
+        status: row.status as OfflineTokenStatus | undefined,
+        taskId: row.taskId || undefined,
+        ackState: row.ackState || undefined,
+        sessionState: row.sessionState || undefined,
+      }));
+    } catch (error) {
+      console.log("–– – retrieveBySessionState – error––", error);
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
+        operation: AuthManagerOperationDict.retrieve,
+        sessionState,
+        excludeTokenId,
+        storageType: AuthManagerStorageTypeDict.postgres,
+        originalError: error,
+      });
+    }
+  }
+
   async retrieveDuplicateTokenHash(
     tokenHash: string,
     excludeTokenId: string

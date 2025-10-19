@@ -596,4 +596,59 @@ export class RedisStorage implements IStorage {
       });
     }
   }
+
+  async retrieveBySessionState(
+    sessionState: string,
+    excludeTokenId: string
+  ): Promise<TokenVaultEntry[]> {
+    try {
+      // Redis doesn't have a direct way to query by sessionState
+      // We need to scan all tokens (not ideal for large datasets)
+      const pattern = this.getTokenKey("*");
+      const keys = await this.redis.keys(pattern);
+
+      const entries: TokenVaultEntry[] = [];
+
+      for (const key of keys) {
+        const data = await this.redis.get(key);
+        if (data) {
+          const entry: RedisTokenEntry = JSON.parse(data);
+          // Match sessionState and exclude the specified token ID
+          if (
+            entry.sessionState === sessionState &&
+            entry.id !== excludeTokenId
+          ) {
+            entries.push({
+              id: entry.id,
+              userId: entry.userId,
+              tokenType: entry.tokenType as TAuthManagerTokenType,
+              encryptedToken: entry.encryptedToken,
+              iv: entry.iv,
+              tokenHash: entry.tokenHash,
+              createdAt: new Date(entry.createdAt),
+              expiresAt: new Date(entry.expiresAt),
+              metadata: entry.metadata,
+              status: entry.status as OfflineTokenStatus | undefined,
+              taskId: entry.taskId,
+              ackState: entry.ackState,
+              sessionState: entry.sessionState,
+            });
+          }
+        }
+      }
+
+      // Sort by creation date (newest first)
+      entries.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+      return entries;
+    } catch (error) {
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
+        operation: AuthManagerOperationDict.retrieve,
+        sessionState,
+        excludeTokenId,
+        storageType: AuthManagerStorageTypeDict.redis,
+        originalError: error,
+      });
+    }
+  }
 }

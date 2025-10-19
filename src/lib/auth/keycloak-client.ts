@@ -432,6 +432,106 @@ export class KeycloakClient {
   }
 
   /**
+   * Revokes a Keycloak session by session ID.
+   *
+   * This method calls the Keycloak admin API to delete a specific user session.
+   * It requires admin credentials and the session ID.
+   *
+   * @param sessionId - The Keycloak session ID to revoke
+   * @throws {AuthManagerError} If the session revocation fails
+   *
+   * @example
+   * ```typescript
+   * const keycloakClient = getKeycloakClient();
+   * await keycloakClient.revokeSession('b1d1f136-b27e-4816-6795-610538427259');
+   * ```
+   */
+  async revokeSession(sessionId: string): Promise<void> {
+    try {
+      // Extract realm from issuer URL
+      // Format: http://localhost:8081/auth/realms/SBO
+      const realmMatch = this.config.issuer.match(/\/realms\/([^/]+)/);
+      if (!realmMatch) {
+        throw new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
+          reason: "Could not extract realm from issuer URL",
+          issuer: this.config.issuer,
+        });
+      }
+      const realm = realmMatch[1];
+
+      // TODO: make realm as env variable
+      const baseUrl = this.config.issuer.replace(/\/realms\/.*$/, "");
+      const sessionEndpoint = `${baseUrl}/admin/realms/${realm}/sessions/${sessionId}`;
+
+      const response = await this.fetch(sessionEndpoint, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${await this.getAdminToken()}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
+          reason: `Failed to revoke session: ${errorText}`,
+          status: response.status,
+          sessionId,
+          operation: "revokeSession",
+        });
+      }
+
+      console.log("Session successfully revoked in Keycloak:", sessionId);
+    } catch (error) {
+      if (AuthManagerError.is(error)) {
+        throw error;
+      }
+      console.error("Error revoking session:", error);
+      throw new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
+        originalError: error,
+        operation: "revokeSession",
+        sessionId,
+      });
+    }
+  }
+
+  /**
+   * Gets an admin access token for Keycloak admin API calls.
+   * Uses client credentials grant type.
+   *
+   * @returns Admin access token
+   * @private
+   */
+  private async getAdminToken(): Promise<string> {
+    try {
+      const response = await this.fetch(this.config.tokenEndpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": KeycloakContentType,
+        },
+        body: new URLSearchParams({
+          client_id: this.config.clientId,
+          client_secret: this.config.clientSecret,
+          grant_type: "client_credentials",
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(
+          `Failed to get admin token: ${error.error_description || error.error}`
+        );
+      }
+
+      const data = await response.json();
+      return data.access_token;
+    } catch (error) {
+      console.error("Error getting admin token:", error);
+      throw error;
+    }
+  }
+
+  /**
    * Retrieves the current Keycloak client configuration.
    *
    * @returns The configuration object used by the Keycloak client.
