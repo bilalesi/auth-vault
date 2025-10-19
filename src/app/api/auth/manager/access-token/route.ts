@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
         })
       );
     }
-
+    console.log("———entry", entry);
     const keycloakClient = getKeycloakClient();
     const token = decryptToken(entry.encryptedToken, entry.iv);
     const response = await keycloakClient.refreshAccessToken(token);
@@ -108,6 +108,7 @@ export async function GET(request: NextRequest) {
       expiresIn: response.expires_in,
     });
   } catch (error) {
+    console.log("–– – GET – error––", error);
     return throwError(error);
   }
 }

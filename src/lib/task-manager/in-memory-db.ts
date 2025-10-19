@@ -1,18 +1,13 @@
-/**
- * In-Memory Task Database
- * Simulates a task manager database for demonstration purposes
- */
-
 export interface Task {
   id: string;
   name: string;
-  description: string;
+  description?: string;
   status: "pending" | "running" | "completed" | "failed";
   createdAt: Date;
   startedAt?: Date;
   completedAt?: Date;
   userId: string;
-  offlineTokenId?: string;
+  persistentTokenId?: string; // ID from token vault (persistent_token_id)
   offlineTokenStatus?: "pending" | "active" | "failed";
   result?: string;
   error?: string;
@@ -23,7 +18,6 @@ class InMemoryTaskDB {
   private tasks: Map<string, Task> = new Map();
 
   create(task: Omit<Task, "id" | "createdAt" | "status">): Task {
-    // Generate UUIDv4 for compatibility with auth manager
     const id = crypto.randomUUID();
     const newTask: Task = {
       ...task,
@@ -53,9 +47,10 @@ class InMemoryTaskDB {
   }
 
   getUserTasks(userId: string): Task[] {
-    return Array.from(this.tasks.values()).filter(
+    const data = Array.from(this.tasks.values()).filter(
       (task) => task.userId === userId
     );
+    return data;
   }
 
   getAll(): Task[] {
@@ -67,7 +62,6 @@ class InMemoryTaskDB {
   }
 }
 
-// Singleton instance
 let dbInstance: InMemoryTaskDB | null = null;
 
 export function getTaskDB(): InMemoryTaskDB {

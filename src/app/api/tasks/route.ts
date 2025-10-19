@@ -6,7 +6,7 @@ import { getTaskDB } from "@/lib/task-manager/in-memory-db";
 
 const CreateTaskSchema = z.object({
   name: z.string().min(1),
-  description: z.string(),
+  description: z.string().optional(),
 });
 
 /**

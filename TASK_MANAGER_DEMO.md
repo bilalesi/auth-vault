@@ -35,8 +35,7 @@ User creates a task → Task stored with status "pending"
 ```
 Click "Request Offline Token" →
   POST /api/auth/manager/offline-consent
-    → Creates pending token in vault
-    → Links token to task
+    → Creates pending token in vault (gets persistent_token_id)
     → Returns consent URL
   → Redirects to Keycloak
 ```
@@ -47,18 +46,32 @@ Click "Request Offline Token" →
 User grants consent in Keycloak →
   Keycloak redirects to /api/auth/manager/offline-callback
     → Exchanges code for offline token
+    → Stores encrypted token in vault with persistent_token_id
     → Updates vault: status = "active"
-    → Updates task: offlineTokenStatus = "active"
-  → Redirects back to /tasks
+  → Redirects back to /tasks with persistent_token_id
 ```
 
-#### Step 4: Execute Task
+#### Step 4: Link Token to Task
+
+```
+Frontend receives persistent_token_id →
+  POST /api/tasks/{taskId}/link-persistent-id
+    → Links persistent_token_id to task
+    → Updates task: offlineTokenStatus = "pending" → "active"
+```
+
+#### Step 5: Execute Task
 
 ```
 Click "Execute Task" →
   POST /api/tasks/{taskId}/execute
-    → Checks token status
-    → If active: starts task execution
+    → Retrieves persistent_token_id from task
+    → Simulates expired access token scenario
+    → Calls GET /api/auth/manager/access-token?id={persistent_token_id}
+      → Retrieves encrypted refresh token from vault
+      → Exchanges refresh token for new access token
+      → Returns fresh access token
+    → Uses access token to execute task
     → Updates task: status = "running"
     → Simulates work with progress updates
   → Task completes: status = "completed"
@@ -82,7 +95,7 @@ Get all tasks for authenticated user
       "name": "Data Processing",
       "description": "Process large dataset",
       "status": "pending",
-      "offlineTokenId": "token-456",
+      "persistentTokenId": "550e8400-e29b-41d4-a716-446655440000",
       "offlineTokenStatus": "active",
       "progress": 0,
       "createdAt": "2025-01-18T12:00:00Z"
@@ -112,15 +125,15 @@ Get specific task details
 
 Delete a task
 
-#### `POST /api/tasks/{taskId}/link-token`
+#### `POST /api/tasks/{taskId}/link-persistent-id`
 
-Link an offline token to a task
+Link a persistent token ID to a task
 
 **Request:**
 
 ```json
 {
-  "offlineTokenId": "550e8400-e29b-41d4-a716-446655440000"
+  "persistentTokenId": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
 
@@ -138,13 +151,17 @@ Execute a task using its offline token
 ## Task Status Flow
 
 ```
-pending → (request token) → pending (token: pending)
+pending → (request token) → pending (no persistent_token_id)
                           ↓
                     (grant consent)
+                          ↓
+                    (link persistent_token_id)
                           ↓
                     pending (token: active)
                           ↓
                     (execute task)
+                          ↓
+                    (get access token via persistent_token_id)
                           ↓
                        running
                           ↓
@@ -155,15 +172,19 @@ pending → (request token) → pending (token: pending)
 
 ## Task Execution Simulation
 
-When a task is executed, it simulates real work:
+When a task is executed, it simulates the complete token refresh flow:
 
-1. **Start**: Task status → "running", progress → 0%
-2. **Progress**: Updates every second, progress += 10%
-3. **Complete**: After 10 seconds, status → "completed"
-4. **Result**: Stores success message
+1. **Token Retrieval**: Uses persistent_token_id to get access token
+2. **Token Refresh**: Simulates expired token → calls `/api/auth/manager/access-token`
+3. **Start**: Task status → "running", progress → 0%
+4. **Progress**: Updates every second, progress += 10%
+5. **Complete**: After 10 seconds, status → "completed"
+6. **Result**: Stores success message
 
 ```typescript
-// Simulated execution
+// Simulated execution with token refresh
+persistent_token_id → refresh token → access token → execute task
+                                                          ↓
 0% → 10% → 20% → 30% → 40% → 50% → 60% → 70% → 80% → 90% → 100%
 └─────────────────── 10 seconds ──────────────────────┘
 ```
@@ -284,7 +305,7 @@ interface Task {
   startedAt?: Date; // Execution start time
   completedAt?: Date; // Completion time
   userId: string; // Owner user ID
-  offlineTokenId?: string; // Linked token ID
+  persistentTokenId?: string; // Linked persistent token ID (from vault)
   offlineTokenStatus?: "pending" | "active" | "failed";
   result?: string; // Success message
   error?: string; // Error message
@@ -347,18 +368,25 @@ curl -X POST http://localhost:3000/api/tasks/task-123/execute \
        ├─── POST /api/tasks (create)
        │
        ├─── POST /api/auth/manager/offline-consent
-       │    └─→ Creates pending token
-       │    └─→ Returns consent URL
+       │    └─→ Creates pending token in vault
+       │    └─→ Returns consent URL + persistent_token_id
        │
        ├─── [User grants consent in Keycloak]
        │
        ├─── GET /api/auth/manager/offline-callback
-       │    └─→ Exchanges code for token
-       │    └─→ Updates vault & task
+       │    └─→ Exchanges code for offline token
+       │    └─→ Encrypts and stores token in vault
+       │    └─→ Returns persistent_token_id
+       │
+       ├─── POST /api/tasks/{id}/link-persistent-id
+       │    └─→ Links persistent_token_id to task
        │
        └─── POST /api/tasks/{id}/execute
-            └─→ Checks token status
-            └─→ Executes task
+            └─→ Retrieves persistent_token_id from task
+            └─→ GET /api/auth/manager/access-token?id={persistent_token_id}
+            │   └─→ Retrieves encrypted refresh token
+            │   └─→ Exchanges for fresh access token
+            └─→ Uses access token to execute task
             └─→ Updates progress
             └─→ Completes task
 ```
@@ -382,3 +410,38 @@ curl -X POST http://localhost:3000/api/tasks/task-123/execute \
 - Implement task cancellation
 - Add task retry logic
 - Support batch operations
+
+## Key Implementation Details
+
+### Persistent Token ID Flow
+
+The demo uses `persistent_token_id` (the database ID from the token vault) instead of passing tokens directly:
+
+1. **Token Creation**: When consent is granted, the offline token is encrypted and stored in the vault with a unique `persistent_token_id`
+2. **Task Linking**: The `persistent_token_id` is linked to the task (not the actual token)
+3. **Token Retrieval**: During task execution, the system uses the `persistent_token_id` to retrieve and refresh the access token
+4. **Security**: The actual refresh token never leaves the vault - only the ID is stored with the task
+
+### Access Token Refresh Simulation
+
+The task execution simulates a real-world scenario where:
+
+1. Task needs to execute → retrieves `persistent_token_id` from task
+2. Calls `GET /api/auth/manager/access-token?id={persistent_token_id}`
+3. The endpoint:
+   - Retrieves the encrypted refresh token from vault
+   - Decrypts it
+   - Exchanges it with Keycloak for a fresh access token
+   - Returns the new access token (expires in ~300 seconds)
+4. Task uses the fresh access token to perform work
+5. Progress updates simulate real task execution
+
+This demonstrates how external services (like Jupyter or task managers) can use persistent token IDs to get fresh access tokens without storing sensitive refresh tokens.
+
+### Why This Approach?
+
+- **Security**: Refresh tokens are encrypted and never exposed
+- **Scalability**: Multiple services can use the same persistent_token_id
+- **Simplicity**: Services only need to store a UUID, not manage token encryption
+- **Auditability**: All token usage is tracked in the vault
+- **Flexibility**: Tokens can be revoked by deleting the vault entry

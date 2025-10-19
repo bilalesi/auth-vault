@@ -77,16 +77,11 @@ export class PgStorage implements IStorage {
         return null;
       }
 
-      const decryptedToken =
-        row.encryptedToken && row.iv
-          ? decryptToken(row.encryptedToken, row.iv)
-          : null;
-
       return {
         id: row.id,
         userId: row.userId,
         tokenType: row.tokenType as TAuthManagerTokenType,
-        encryptedToken: decryptedToken,
+        encryptedToken: row.encryptedToken,
         iv: row.iv,
         createdAt: row.createdAt,
         expiresAt: row.expiresAt,
@@ -265,7 +260,7 @@ export class PgStorage implements IStorage {
         id: row.id,
         userId: row.userId,
         tokenType: row.tokenType as TAuthManagerTokenType,
-        encryptedToken: token,
+        encryptedToken: encryptedToken || row.encryptedToken,
         iv: iv || row.iv,
         createdAt: row.createdAt,
         expiresAt: row.expiresAt,

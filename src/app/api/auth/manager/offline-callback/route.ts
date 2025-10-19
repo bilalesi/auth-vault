@@ -166,15 +166,29 @@ export async function GET(request: NextRequest) {
       // });
       // TODO: here should call TaskManager API to update the task with the persistentTokenId
       // TODO: ask JDC where to redirect after callback finished
+      // TODO: (it should be a new page that tells the user you can close this window or error happen)
       // TODO: (this should be some task or activity page)
+      // Simulate calling the access token endpoint
+      const persistTaskUrl = `${process.env.NEXTAUTH_URL}/api/tasks/${statePayload.taskId}/link-persistent-id`;
+      const persistResponse = await fetch(persistTaskUrl, {
+        method: "post",
+        headers: {
+          "Content-Type": "application/json",
+          accept: "application/json",
+        },
+        body: JSON.stringify({ persistentTokenId: entry.id }),
+      });
+
+      if (!persistResponse.ok) {
+        console.log("———persistent is failed", await persistResponse.text());
+        throw new Error(
+          `Failed to get access token: ${persistResponse.statusText}`
+        );
+      }
+      console.log("———persistent id saved", await persistResponse.json());
       return Response.redirect(
         `${process.env.NEXTAUTH_URL}/tasks?success=true&taskId=${statePayload.taskId}&persistentTokenId=${entry.id}`
       );
-
-      // Redirect to tasks page
-      //   return Response.redirect(
-      //     `${process.env.NEXTAUTH_URL}/tasks?success=true&taskId=${statePayload.taskId}`
-      //   );
     } catch (error: any) {
       console.error("Error exchanging code for offline token:", error);
       await vault.updateOfflineTokenByState(

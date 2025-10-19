@@ -9,9 +9,10 @@ import { getTaskDB } from "@/lib/task-manager/in-memory-db";
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { taskId: string } }
+  { params }: { params: Promise<{ taskId: string }> }
 ) {
   try {
+    const { taskId } = await params;
     const validation = await validateRequest(request);
 
     if (!validation.valid || !validation.userId) {
@@ -22,7 +23,7 @@ export async function GET(
     }
 
     const taskDB = getTaskDB();
-    const task = taskDB.get(params.taskId);
+    const task = taskDB.get(taskId);
 
     if (!task) {
       return Response.json(
@@ -54,9 +55,10 @@ export async function GET(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { taskId: string } }
+  { params }: { params: Promise<{ taskId: string }> }
 ) {
   try {
+    const { taskId } = await params;
     const validation = await validateRequest(request);
 
     if (!validation.valid || !validation.userId) {
@@ -67,7 +69,7 @@ export async function DELETE(
     }
 
     const taskDB = getTaskDB();
-    const task = taskDB.get(params.taskId);
+    const task = taskDB.get(taskId);
 
     if (!task) {
       return Response.json(
@@ -83,7 +85,7 @@ export async function DELETE(
       );
     }
 
-    taskDB.delete(params.taskId);
+    taskDB.delete(taskId);
 
     return Response.json({ message: "Task deleted successfully" });
   } catch (error) {

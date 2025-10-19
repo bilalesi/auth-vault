@@ -352,8 +352,11 @@ export function decryptToken(encryptedToken: string, iv: string): string {
 
     // Extract the auth tag from the end of the encrypted data
     const authTagStart = encryptedToken.length - AUTH_TAG_LENGTH * 2; // 2 hex chars per byte
+    console.log("–– – decryptToken – authTagStart––", authTagStart);
     const encryptedData = encryptedToken.slice(0, authTagStart);
+    console.log("–– – decryptToken – encryptedData––", encryptedData);
     const authTag = Buffer.from(encryptedToken.slice(authTagStart), "hex");
+    console.log("–– – decryptToken – authTag––", authTag);
 
     if (authTag.length !== AUTH_TAG_LENGTH) {
       throw new AuthManagerError(AuthManagerErrorDict.decryption_failed.code, {

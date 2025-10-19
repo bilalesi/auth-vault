@@ -1,27 +1,12 @@
 "use client";
 
+import { Task } from "@/lib/task-manager/in-memory-db";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-interface Task {
-  id: string;
-  name: string;
-  description: string;
-  status: "pending" | "running" | "completed" | "failed";
-  createdAt: string;
-  startedAt?: string;
-  completedAt?: string;
-  offlineTokenId?: string;
-  offlineTokenStatus?: "pending" | "active" | "failed";
-  result?: string;
-  error?: string;
-  progress?: number;
-}
-
 export default function TasksPage() {
   const { data: session, status } = useSession();
-  console.log("–– – TasksPage – status––", status);
   const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
@@ -54,10 +39,12 @@ export default function TasksPage() {
         headers: {
           Authorization: `Bearer ${session?.accessToken}`,
         },
+        cache: "no-cache",
       });
 
       if (response.ok) {
         const data = await response.json();
+        console.log("–– – fetchTasks – data––", data);
         setTasks(data.tasks);
       }
     } catch (error) {
@@ -117,24 +104,6 @@ export default function TasksPage() {
       if (response.ok) {
         const data = await response.json();
         console.log("–– – requestOfflineToken – data––", data);
-
-        // // Link the token to the task
-        // await fetch(`/api/tasks/${taskId}/link-token`, {
-        //   method: "POST",
-        //   headers: {
-        //     "Content-Type": "application/json",
-        //     Authorization: `Bearer ${session?.accessToken}`,
-        //   },
-        //   body: JSON.stringify({
-        //     offlineTokenId: data.persistentTokenId,
-        //   }),
-        // });
-
-        // setMessage({
-        //   type: "info",
-        //   text: "Redirecting to consent page...",
-        // });
-
         // Redirect to consent URL
         setTimeout(() => {
           window.location.href = data.consentUrl;
@@ -151,6 +120,7 @@ export default function TasksPage() {
   };
 
   const executeTask = async (taskId: string) => {
+    console.log("–– – executeTask – taskId––", taskId);
     setLoading(true);
     setMessage(null);
 
@@ -159,6 +129,7 @@ export default function TasksPage() {
         method: "POST",
         headers: {
           Authorization: `Bearer ${session?.accessToken}`,
+          "Content-Type": "application/json",
         },
       });
 
@@ -187,6 +158,7 @@ export default function TasksPage() {
         });
       }
     } catch (error) {
+      console.log("–– – executeTask – error––", error);
       setMessage({ type: "error", text: "Failed to execute task" });
     } finally {
       setLoading(false);
@@ -301,7 +273,6 @@ export default function TasksPage() {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Describe what this task does..."
                   rows={3}
-                  required
                 />
               </div>
               <button
@@ -358,7 +329,7 @@ export default function TasksPage() {
                             )}
                           </div>
                           <div className="flex gap-3">
-                            {!task.offlineTokenId &&
+                            {!task.persistentTokenId &&
                               task.status === "pending" && (
                                 <button
                                   onClick={() => requestOfflineToken(task.id)}
@@ -369,21 +340,21 @@ export default function TasksPage() {
                                 </button>
                               )}
 
-                            {task.offlineTokenId &&
+                            {task.persistentTokenId &&
                               task.status === "pending" &&
                               task.offlineTokenStatus === "active" && (
                                 <button
                                   onClick={() => executeTask(task.id)}
                                   disabled={loading}
-                                  className="flex-1 bg-green-600 max-w-max text-white py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                                  className="flex-1 bg-teal-800 max-w-max text-white py-2 px-4 rounded-lg hover:bg-teal-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
                                 >
-                                  ▶️ Execute Task
+                                  Execute Task
                                 </button>
                               )}
 
                             {task.offlineTokenStatus === "pending" && (
                               <div className="flex-1 bg-yellow-50 border border-yellow-200 text-yellow-800 py-2 px-4 rounded-lg text-center">
-                                ⏳ Waiting for consent...
+                                Waiting for consent...
                               </div>
                             )}
                           </div>

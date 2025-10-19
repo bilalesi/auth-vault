@@ -360,7 +360,7 @@ export class RedisStorage implements IStorage {
         id: updatedEntry.id,
         userId: updatedEntry.userId,
         tokenType: updatedEntry.tokenType,
-        encryptedToken: token,
+        encryptedToken: encryptedToken || entry.encryptedToken,
         iv: iv || entry.iv,
         createdAt: new Date(updatedEntry.createdAt),
         expiresAt: new Date(updatedEntry.expiresAt),

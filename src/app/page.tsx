@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { SignInButton } from "@/components/sign-in-button";
 import { SignOutButton } from "@/components/sign-out-button";
+import Link from "next/link";
 
 export default async function Home() {
   const session = await auth();
@@ -88,7 +89,13 @@ export default async function Home() {
                 )}
               </div>
 
-              <div className="pt-4">
+              <div className="pt-4 flex items-center gap-1.5">
+                <Link
+                  href="/tasks"
+                  className="inline-flex justify-center rounded-md border border-gray-300 bg-teal-600 px-6 py-3 text-base font-medium text-white shadow-sm hover:bg-gray-50 hover:text-teal-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Tasks
+                </Link>
                 <SignOutButton />
               </div>
             </div>
