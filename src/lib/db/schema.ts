@@ -32,6 +32,7 @@ export const AuthVault = pgTable(
     tokenType: TokenTypeEnum("token_type").notNull(),
     encryptedToken: text("encrypted_token"),
     iv: text("iv"),
+    tokenHash: text("token_hash"), // SHA-256 hash of the decrypted token for deduplication
     createdAt: timestamp("created_at").notNull().defaultNow(),
     expiresAt: timestamp("expires_at").notNull(),
     metadata: jsonb("metadata"),
@@ -46,6 +47,7 @@ export const AuthVault = pgTable(
     index("auth_vault_task_id_idx").on(t.taskId),
     index("auth_vault_ack_state_idx").on(t.ackState),
     index("auth_vault_session_state_idx").on(t.sessionState),
+    index("auth_vault_token_hash_idx").on(t.tokenHash),
   ]
 );
 

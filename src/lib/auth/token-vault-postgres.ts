@@ -9,7 +9,12 @@ import {
   type TAuthManagerTokenType,
   type OfflineTokenStatus,
 } from "./token-vault-interface";
-import { encryptToken, decryptToken, generateIV } from "./encryption";
+import {
+  encryptToken,
+  decryptToken,
+  generateIV,
+  hashToken,
+} from "./encryption";
 import { makeUUID } from "./uuid";
 import {
   AuthManagerError,
@@ -34,8 +39,8 @@ export class PgStorage implements IStorage {
       const id = tokenId || makeUUID();
       const iv = generateIV();
       const encryptedToken = encryptToken(token, iv);
+      const tokenHash = hashToken(token);
 
-      // If tokenId provided, delete existing entry first (upsert behavior)
       if (tokenId) {
         await this.db.delete(AuthVault).where(eq(AuthVault.id, tokenId));
       }
@@ -46,6 +51,7 @@ export class PgStorage implements IStorage {
         tokenType: type,
         encryptedToken,
         iv,
+        tokenHash,
         expiresAt,
         metadata: metadata || null,
       });
@@ -141,9 +147,8 @@ export class PgStorage implements IStorage {
           );
         },
       });
-      if (!row) return null;
 
-      // Check if token has expired
+      if (!row) return null;
       if (isExpired(row.expiresAt)) {
         await this.delete(row.id);
         return null;
@@ -153,10 +158,7 @@ export class PgStorage implements IStorage {
         id: row.id,
         userId: row.userId,
         tokenType: row.tokenType as TAuthManagerTokenType,
-        encryptedToken:
-          row.encryptedToken && row.iv
-            ? decryptToken(row.encryptedToken, row.iv)
-            : null,
+        encryptedToken: row.encryptedToken,
         iv: row.iv,
         createdAt: row.createdAt,
         expiresAt: row.expiresAt,
@@ -216,27 +218,24 @@ export class PgStorage implements IStorage {
     sessionState?: string
   ): Promise<TokenVaultEntry | null> {
     try {
-      const existing = await this.db
-        .select()
-        .from(AuthVault)
-        .where(eq(AuthVault.ackState, ackState))
-        .limit(1);
+      const row = await this.db.query.AuthVault.findFirst({
+        where: (f, op) => {
+          return op.eq(f.ackState, ackState);
+        },
+      });
 
-      if (existing.length === 0) {
-        return null;
-      }
-
-      const row = existing[0];
+      if (!row) return null;
 
       let encryptedToken: string | null = null;
       let iv: string | null = null;
+      let tokenHash: string | null = null;
 
       if (token) {
         iv = generateIV();
         encryptedToken = encryptToken(token, iv);
+        tokenHash = hashToken(token);
       }
 
-      // Merge metadata: append new data to existing
       const existingMetadata = (row.metadata as Record<string, any>) || {};
       const mergedMetadata = {
         ...existingMetadata,
@@ -244,12 +243,12 @@ export class PgStorage implements IStorage {
         status,
       };
 
-      // Update the entry
       await this.db
         .update(AuthVault)
         .set({
           encryptedToken,
           iv,
+          tokenHash,
           status,
           sessionState: sessionState || null,
           metadata: mergedMetadata,
@@ -279,28 +278,21 @@ export class PgStorage implements IStorage {
     }
   }
 
-  async getByAckState(ackState: string): Promise<TokenVaultEntry | null> {
+  async retrieveByAckState(ackState: string): Promise<TokenVaultEntry | null> {
     try {
-      const result = await this.db
-        .select()
-        .from(AuthVault)
-        .where(eq(AuthVault.ackState, ackState))
-        .limit(1);
+      const row = await this.db.query.AuthVault.findFirst({
+        where(f, op) {
+          return op.eq(f.ackState, ackState);
+        },
+      });
 
-      if (result.length === 0) {
-        return null;
-      }
-
-      const row = result[0];
+      if (!row) return null;
 
       return {
         id: row.id,
         userId: row.userId,
         tokenType: row.tokenType as TAuthManagerTokenType,
-        encryptedToken:
-          row.encryptedToken && row.iv
-            ? decryptToken(row.encryptedToken, row.iv)
-            : null,
+        encryptedToken: row.encryptedToken,
         iv: row.iv,
         createdAt: row.createdAt,
         expiresAt: row.expiresAt,
@@ -398,6 +390,70 @@ export class PgStorage implements IStorage {
       throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
         operation: AuthManagerOperationDict.store,
         userId,
+        storageType: AuthManagerStorageTypeDict.postgres,
+        originalError: error,
+      });
+    }
+  }
+
+  async retrieveUserOfflineTokens(userId: string): Promise<TokenVaultEntry[]> {
+    try {
+      const rows = await this.db.query.AuthVault.findMany({
+        where: (f, op) => {
+          return op.and(
+            op.eq(f.userId, userId),
+            op.eq(f.tokenType, AuthManagerTokenTypeDict.Offline)
+          );
+        },
+        orderBy: (f, op) => [op.desc(f.createdAt)],
+      });
+
+      return rows.map((row) => ({
+        id: row.id,
+        userId: row.userId,
+        tokenType: row.tokenType as TAuthManagerTokenType,
+        encryptedToken: row.encryptedToken,
+        iv: row.iv,
+        createdAt: row.createdAt,
+        expiresAt: row.expiresAt,
+        metadata: (row.metadata as Record<string, any>) || undefined,
+        status: row.status as OfflineTokenStatus | undefined,
+        taskId: row.taskId || undefined,
+        ackState: row.ackState || undefined,
+        sessionState: row.sessionState || undefined,
+      }));
+    } catch (error) {
+      console.log("–– – getUserOfflineTokens – error––", error);
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
+        operation: AuthManagerOperationDict.retrieve,
+        userId,
+        storageType: AuthManagerStorageTypeDict.postgres,
+        originalError: error,
+      });
+    }
+  }
+
+  async retrieveDuplicateTokenHash(
+    tokenHash: string,
+    excludeTokenId: string
+  ): Promise<boolean> {
+    try {
+      const row = await this.db.query.AuthVault.findFirst({
+        where: (f, op) => {
+          return op.and(
+            op.eq(f.tokenHash, tokenHash),
+            op.ne(f.id, excludeTokenId)
+          );
+        },
+      });
+
+      return row !== undefined;
+    } catch (error) {
+      console.log("–– – tokenHashExists – error––", error);
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
+        operation: AuthManagerOperationDict.retrieve,
+        tokenHash,
+        excludeTokenId,
         storageType: AuthManagerStorageTypeDict.postgres,
         originalError: error,
       });

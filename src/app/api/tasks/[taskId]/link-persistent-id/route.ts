@@ -1,7 +1,6 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { StatusCodes } from "http-status-codes";
-import { validateRequest } from "@/lib/auth/validate-token";
 import { getTaskDB } from "@/lib/task-manager/in-memory-db";
 
 const LinkTokenSchema = z.object({
@@ -27,8 +26,6 @@ export async function POST(
 
     const body = await request.json();
     const { persistentTokenId } = LinkTokenSchema.parse(body);
-
-    // Update task with persistent token ID
     const updatedTask = taskDB.update(task.id, {
       persistentTokenId,
       offlineTokenStatus: "active",
@@ -39,14 +36,13 @@ export async function POST(
       message: "Persistent token ID linked to task successfully",
     });
   } catch (error) {
+    console.error("Error linking persistent token id to task:", error);
     if (error instanceof z.ZodError) {
       return Response.json(
         { error: "Invalid request", details: error.issues },
         { status: StatusCodes.BAD_REQUEST }
       );
     }
-
-    console.error("Error linking persistent token ID to task:", error);
     return Response.json(
       { error: "Internal server error" },
       { status: StatusCodes.INTERNAL_SERVER_ERROR }

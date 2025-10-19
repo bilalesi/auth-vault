@@ -15,6 +15,13 @@
       "when": 1760799874968,
       "tag": "0001_cheerful_sentry",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1760873600728,
+      "tag": "0002_small_electro",
+      "breakpoints": true
     }
   ]
 }

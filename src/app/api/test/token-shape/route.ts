@@ -3,10 +3,6 @@ import { StatusCodes } from "http-status-codes";
 import { auth } from "@/auth";
 import { getKeycloakClient } from "@/lib/auth/keycloak-client";
 
-/**
- * Test endpoint to inspect actual Keycloak token response shapes
- * This helps us validate our Zod schemas
- */
 export async function GET() {
   try {
     const session = await auth();
@@ -29,7 +25,6 @@ export async function GET() {
       tests: {},
     };
 
-    // Test 1: Token Introspection
     if (session.accessToken) {
       try {
         const introspection = await keycloakClient.introspect(
@@ -48,7 +43,6 @@ export async function GET() {
       }
     }
 
-    // Test 2: User Info
     if (session.accessToken) {
       try {
         const userInfo = await keycloakClient.info(session.accessToken);
@@ -65,12 +59,9 @@ export async function GET() {
       }
     }
 
-    // Test 3: Token Refresh (we'll use the refresh token from session)
-    // Note: This is read from the JWT token on the server side
-    // We can't directly access it here, but we can test the endpoint structure
-
     return NextResponse.json(results, { status: StatusCodes.OK });
   } catch (error: any) {
+    console.error("—— [TokenShape] – GET error: ", error);
     return NextResponse.json(
       { error: error.message, stack: error.stack },
       { status: StatusCodes.INTERNAL_SERVER_ERROR }

@@ -3,10 +3,6 @@ import { StatusCodes } from "http-status-codes";
 import { validateRequest } from "@/lib/auth/validate-token";
 import { getTaskDB } from "@/lib/task-manager/in-memory-db";
 
-/**
- * GET /api/tasks/[taskId]
- * Get a specific task
- */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ taskId: string }> }
@@ -49,10 +45,6 @@ export async function GET(
   }
 }
 
-/**
- * DELETE /api/tasks/[taskId]
- * Delete a task
- */
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ taskId: string }> }

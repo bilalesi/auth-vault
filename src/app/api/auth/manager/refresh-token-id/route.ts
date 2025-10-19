@@ -8,19 +8,17 @@ import {
 } from "@/lib/auth/vault-errors";
 
 /**
- * POST /api/auth/token/refresh-id
+ * Handles the GET request for refreshing the token ID.
  *
- * Returns the persistent token ID for the user's refresh token.
- * This endpoint is used by external services (like Jupyter Launcher)
- * to get a token ID that can be used to obtain fresh access tokens.
+ * This function validates the incoming request, retrieves the user's refresh token
+ * from the storage, and returns the token details if valid. If the request is invalid
+ * or the refresh token is not found, it returns an appropriate error response.
  *
- * The refresh token is already stored in the vault during login,
- * so this endpoint validates the access token and returns the persistentTokenId.
+ * @param request - The incoming HTTP request of type `NextRequest`.
+ * @returns A response containing the persistent token ID and its expiration time,
+ *          or an error response in case of validation failure or missing token.
  *
- * External services must pass the access token in the Authorization header:
- * Authorization: Bearer <access_token>
- *
- * Requirements: 9.1, 3.1, 3.2
+ * @throws Will throw an error if an unexpected issue occurs during processing.
  */
 export async function GET(request: NextRequest) {
   try {

@@ -9,15 +9,11 @@ const CreateTaskSchema = z.object({
   description: z.string().optional(),
 });
 
-/**
- * GET /api/tasks
- * Get all tasks for the authenticated user
- */
 export async function GET(request: NextRequest) {
   try {
     const validation = await validateRequest(request);
 
-    if (!validation.valid || !validation.userId) {
+    if (!validation.valid) {
       return Response.json(
         { error: "Unauthorized" },
         { status: StatusCodes.UNAUTHORIZED }
@@ -37,15 +33,11 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/**
- * POST /api/tasks
- * Create a new task
- */
 export async function POST(request: NextRequest) {
   try {
     const validation = await validateRequest(request);
 
-    if (!validation.valid || !validation.userId) {
+    if (!validation.valid) {
       return Response.json(
         { error: "Unauthorized" },
         { status: StatusCodes.UNAUTHORIZED }
@@ -67,6 +59,7 @@ export async function POST(request: NextRequest) {
       { status: StatusCodes.CREATED }
     );
   } catch (error) {
+    console.error("Error creating task:", error);
     if (error instanceof z.ZodError) {
       return Response.json(
         { error: "Invalid request", details: error.issues },
@@ -74,7 +67,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.error("Error creating task:", error);
     return Response.json(
       { error: "Internal server error" },
       { status: StatusCodes.INTERNAL_SERVER_ERROR }

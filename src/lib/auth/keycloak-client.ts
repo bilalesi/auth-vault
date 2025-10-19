@@ -1,12 +1,6 @@
 import { KeycloakContentType } from "./keycloak-schemas";
 import { AuthManagerError, AuthManagerErrorDict } from "./vault-errors";
 
-/**
- * Keycloak Client Operations Dictionary
- *
- * Centralized dictionary of all operation names used in the Keycloak client.
- * This ensures consistency in error reporting and logging.
- */
 export const KeycloakOperationDict = {
   refreshAccessToken: "refreshAccessToken",
   requestOfflineToken: "requestOfflineToken",
@@ -18,11 +12,8 @@ export const KeycloakOperationDict = {
 export type KeycloakOperation =
   (typeof KeycloakOperationDict)[keyof typeof KeycloakOperationDict];
 
-/**
- * Keycloak Configuration
- */
 export interface KeycloakConfig {
-  issuer: string; // e.g., http://localhost:8081/auth/realms/SBO
+  issuer: string;
   clientId: string;
   clientSecret: string;
   tokenEndpoint: string;
@@ -31,9 +22,6 @@ export interface KeycloakConfig {
   userinfoEndpoint: string;
 }
 
-/**
- * Token Response from Keycloak
- */
 export interface TokenResponse {
   access_token: string;
   refresh_token?: string;
@@ -45,9 +33,6 @@ export interface TokenResponse {
   session_state: string;
 }
 
-/**
- * Token Introspection Response
- */
 export interface TokenIntrospection {
   active: boolean;
   exp?: number;
@@ -59,9 +44,6 @@ export interface TokenIntrospection {
   token_type?: string;
 }
 
-/**
- * User Info Response
- */
 export interface UserInfo {
   sub: string;
   email?: string;
@@ -99,7 +81,7 @@ export class KeycloakClient {
         `${issuer}/protocol/openid-connect/userinfo`,
     };
 
-    // configure HTTP agent for connection pooling and keep-alive
+    // configure http agent for connection pooling and keep-alive
     if (typeof window === "undefined") {
       const http = require("http");
       const https = require("https");
@@ -391,6 +373,60 @@ export class KeycloakClient {
       throw new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
         originalError: error,
         operation: KeycloakOperationDict.getUserInfo,
+      });
+    }
+  }
+
+  /**
+   * Revokes a refresh or offline token in Keycloak
+   *
+   * This method calls the Keycloak revocation endpoint to invalidate a token.
+   * Once revoked, the token can no longer be used to obtain new access tokens.
+   *
+   * @param token - The refresh or offline token to revoke
+   * @returns Promise that resolves when the token is successfully revoked
+   * @throws {AuthManagerError} If the revocation fails
+   *
+   * @example
+   * ```typescript
+   * await keycloakClient.revokeToken(offlineToken);
+   * ```
+   */
+  async revokeToken(token: string): Promise<void> {
+    try {
+      const response = await this.fetch(this.config.revocationEndpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": KeycloakContentType,
+        },
+        body: new URLSearchParams({
+          client_id: this.config.clientId,
+          client_secret: this.config.clientSecret,
+          token,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
+          reason: `Failed to revoke token: ${
+            error.error_description || error.error
+          }`,
+          status: response.status,
+          keycloakError: error.error,
+          operation: KeycloakOperationDict.revokeToken,
+        });
+      }
+
+      console.log("Token successfully revoked in Keycloak");
+    } catch (error) {
+      if (AuthManagerError.is(error)) {
+        throw error;
+      }
+      console.error("Error revoking token:", error);
+      throw new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
+        originalError: error,
+        operation: KeycloakOperationDict.revokeToken,
       });
     }
   }

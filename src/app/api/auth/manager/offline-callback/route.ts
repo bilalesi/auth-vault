@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
     }
 
     const vault = GetStorage();
-    const entry = await vault.getByAckState(ackState);
+    const entry = await vault.retrieveByAckState(ackState);
 
     if (!entry) {
       return makeVaultError(

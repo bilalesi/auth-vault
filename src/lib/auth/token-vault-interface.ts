@@ -1,29 +1,17 @@
-/**
- * Token type dictionary
- */
 export const AuthManagerTokenTypeDict = {
   Refresh: "refresh",
   Offline: "offline",
 } as const;
 
-/**
- * Extract token type from dictionary
- */
 export type TAuthManagerTokenType =
   (typeof AuthManagerTokenTypeDict)[keyof typeof AuthManagerTokenTypeDict];
 
-/**
- * Offline token status dictionary
- */
 export const OfflineTokenStatusDict = {
   Pending: "pending",
   Active: "active",
   Failed: "failed",
 } as const;
 
-/**
- * Extract offline token status from dictionary
- */
 export type OfflineTokenStatus =
   (typeof OfflineTokenStatusDict)[keyof typeof OfflineTokenStatusDict];
 
@@ -32,19 +20,19 @@ export type OfflineTokenStatus =
  * Represents a stored token in the vault
  */
 export interface TokenVaultEntry {
-  id: string; // Persistent token ID (UUID)
-  userId: string; // User ID from Keycloak
-  tokenType: TAuthManagerTokenType; // Type of token
-  encryptedToken: string | null; // AES-256-GCM encrypted token (null for pending)
-  iv: string | null; // Initialization vector for decryption (null for pending)
-  createdAt: Date; // When the token was stored
-  expiresAt: Date; // When the token expires
-  metadata?: Record<string, any>; // Optional metadata
-  // Offline token specific fields
-  status?: OfflineTokenStatus; // Status for offline tokens
-  taskId?: string; // External task ID
-  ackState?: string; // Acknowledgment state for OAuth consent flow (renamed from stateToken)
-  sessionState?: string; // Keycloak session state from token response
+  id: string;
+  userId: string;
+  tokenType: TAuthManagerTokenType;
+  encryptedToken: string | null;
+  iv: string | null;
+  tokenHash?: string | null;
+  createdAt: Date;
+  expiresAt: Date;
+  metadata?: Record<string, any>;
+  status?: OfflineTokenStatus;
+  taskId?: string;
+  ackState?: string;
+  sessionState?: string;
 }
 
 /**
@@ -134,7 +122,7 @@ export interface IStorage {
    * @param ackState - Acknowledgment state
    * @returns Token vault entry or null if not found
    */
-  getByAckState(ackState: string): Promise<TokenVaultEntry | null>;
+  retrieveByAckState(ackState: string): Promise<TokenVaultEntry | null>;
 
   /**
    * Update acknowledgment state for a pending offline token request
@@ -160,4 +148,23 @@ export interface IStorage {
     sessionState?: string,
     metadata?: Record<string, any>
   ): Promise<string>;
+
+  /**
+   * Get all offline tokens for a user
+   * @param userId - User ID
+   * @returns Array of offline token vault entries
+   */
+  retrieveUserOfflineTokens(userId: string): Promise<TokenVaultEntry[]>;
+
+  /**
+   * Check if a token hash exists in the vault (excluding a specific token ID)
+   * Used to determine if an offline token is shared across multiple persistent token IDs
+   * @param tokenHash - SHA-256 hash of the token
+   * @param excludeTokenId - Token ID to exclude from the search
+   * @returns True if the hash exists in another entry
+   */
+  retrieveDuplicateTokenHash(
+    tokenHash: string,
+    excludeTokenId: string
+  ): Promise<boolean>;
 }

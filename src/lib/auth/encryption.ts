@@ -120,7 +120,12 @@
  * @module encryption
  */
 
-import { randomBytes, createCipheriv, createDecipheriv } from "crypto";
+import {
+  randomBytes,
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+} from "crypto";
 import { AuthManagerError, AuthManagerErrorDict } from "./vault-errors";
 
 const ALGORITHM = "aes-256-gcm";
@@ -136,13 +141,6 @@ const KEY_LENGTH = 32; // 32 bytes for AES-256
  *
  * @returns Buffer containing the encryption key
  * @throws {AuthManagerError} If key is missing or invalid format
- *
- * @example
- * ```typescript
- * // Key is loaded from process.env.TOKEN_VAULT_ENCRYPTION_KEY
- * const key = getEncryptionKey();
- * // Returns: Buffer<32 bytes>
- * ```
  */
 function getEncryptionKey(): Buffer {
   const key = process.env.TOKEN_VAULT_ENCRYPTION_KEY;
@@ -179,21 +177,27 @@ function getEncryptionKey(): Buffer {
  * The IV is not secret and should be stored alongside the encrypted data.
  *
  * @returns 32-character hex string (16 bytes)
- *
- * @example
- * ```typescript
- * const iv = generateIV();
- * // Returns: "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6" (32 hex chars)
- *
- * // Use with encryption
- * const encrypted = encryptToken(token, iv);
- *
- * // Store both in database
- * await db.insert({ encryptedToken: encrypted, iv: iv });
- * ```
  */
 export function generateIV(): string {
   return randomBytes(IV_LENGTH).toString("hex");
+}
+
+/**
+ * Hash a token using SHA-256
+ *
+ * Creates a SHA-256 hash of a token for deduplication and comparison purposes.
+ * This is a one-way hash - the original token cannot be recovered from the hash.
+ *
+ * **Use Cases:**
+ * - Detect duplicate offline tokens across multiple persistent token IDs
+ * - Check if any other tasks are using the same offline token before revocation
+ * - Compare tokens without decrypting them
+ *
+ * @param token - The plaintext token to hash
+ * @returns SHA-256 hash as hex string (64 characters)
+ */
+export function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 /**
@@ -211,35 +215,6 @@ export function generateIV(): string {
  * @param iv - Initialization vector as 32-character hex string (from `generateIV()`)
  * @returns Encrypted token as hex string with auth tag appended
  * @throws {AuthManagerError} If encryption fails or IV is invalid
- *
- * @example
- * ```typescript
- * // Encrypt a refresh token
- * const refreshToken = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...";
- * const iv = generateIV();
- *
- * const encrypted = encryptToken(refreshToken, iv);
- * // Returns: "a3f2b1c4d5e6f7a8b9c0d1e2f3a4b5c6..." (hex string)
- *
- * // Store in database
- * await db.tokens.insert({
- *   userId: "user-123",
- *   encryptedToken: encrypted,
- *   iv: iv,
- *   createdAt: new Date()
- * });
- * ```
- *
- * @example
- * ```typescript
- * // Encrypt multiple tokens with unique IVs
- * const tokens = ["token1", "token2", "token3"];
- *
- * const encrypted = tokens.map(token => ({
- *   encrypted: encryptToken(token, generateIV()),
- *   iv: generateIV()
- * }));
- * ```
  */
 export function encryptToken(token: string, iv: string): string {
   try {
@@ -292,48 +267,6 @@ export function encryptToken(token: string, iv: string): string {
  * @param iv - The same initialization vector used during encryption (32-char hex string)
  * @returns Decrypted plaintext token
  * @throws {AuthManagerError} If decryption fails, auth tag invalid, or data tampered
- *
- * @example
- * ```typescript
- * // Retrieve encrypted token from database
- * const entry = await db.tokens.findOne({ id: "token-123" });
- *
- * try {
- *   const token = decryptToken(entry.encryptedToken, entry.iv);
- *   // Returns: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
- *
- *   // Use the decrypted token
- *   const response = await keycloak.refreshAccessToken(token);
- *   console.log('New access token:', response.access_token);
- * } catch (error) {
- *   if (error.code === 'decryption_failed') {
- *     console.error('Token corrupted or tampered');
- *     await db.tokens.delete({ id: "token-123" });
- *   }
- * }
- * ```
- *
- * @example
- * ```typescript
- * // Decrypt and validate token
- * async function getValidToken(tokenId: string) {
- *   const entry = await tokenVault.retrieve(tokenId);
- *
- *   if (!entry) {
- *     throw new Error('Token not found');
- *   }
- *
- *   // Decrypt the token
- *   const token = decryptToken(entry.encryptedToken, entry.iv);
- *
- *   // Check expiration
- *   if (isExpired(entry.expiresAt)) {
- *     throw new Error('Token expired');
- *   }
- *
- *   return token;
- * }
- * ```
  */
 export function decryptToken(encryptedToken: string, iv: string): string {
   try {
@@ -352,11 +285,8 @@ export function decryptToken(encryptedToken: string, iv: string): string {
 
     // Extract the auth tag from the end of the encrypted data
     const authTagStart = encryptedToken.length - AUTH_TAG_LENGTH * 2; // 2 hex chars per byte
-    console.log("–– – decryptToken – authTagStart––", authTagStart);
     const encryptedData = encryptedToken.slice(0, authTagStart);
-    console.log("–– – decryptToken – encryptedData––", encryptedData);
     const authTag = Buffer.from(encryptedToken.slice(authTagStart), "hex");
-    console.log("–– – decryptToken – authTag––", authTag);
 
     if (authTag.length !== AUTH_TAG_LENGTH) {
       throw new AuthManagerError(AuthManagerErrorDict.decryption_failed.code, {
@@ -378,8 +308,6 @@ export function decryptToken(encryptedToken: string, iv: string): string {
     if (AuthManagerError.is(error)) {
       throw error;
     }
-
-    console.error("Error decrypting token:", error);
     throw new AuthManagerError(AuthManagerErrorDict.decryption_failed.code, {
       originalError: error,
       operation: "decryptToken",

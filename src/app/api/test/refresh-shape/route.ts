@@ -4,9 +4,6 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/auth";
 import { getToken } from "next-auth/jwt";
 
-/**
- * Test endpoint to inspect token refresh response shape
- */
 export async function GET(request: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -18,12 +15,10 @@ export async function GET(request: Request) {
       );
     }
 
-    // Get the JWT token which contains the refresh token (server-side only)
     const token = await getToken({
       req: request as any,
       secret: process.env.NEXTAUTH_SECRET,
     });
-    console.log("–– – GET – token––", token);
 
     const results: any = {
       sessionFields: Object.keys(session),
@@ -32,7 +27,6 @@ export async function GET(request: Request) {
       tokenFields: token ? Object.keys(token) : [],
     };
 
-    // Test refresh token endpoint
     if (token?.refreshToken) {
       try {
         const issuer = process.env.KEYCLOAK_ISSUER!;
@@ -78,6 +72,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(results, { status: StatusCodes.OK });
   } catch (error: any) {
+    console.error("—— [RefreshShape] – GET error: ", error);
     return NextResponse.json(
       { error: error.message, stack: error.stack },
       { status: StatusCodes.INTERNAL_SERVER_ERROR }

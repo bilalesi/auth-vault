@@ -7,7 +7,12 @@ import {
   type TAuthManagerTokenType,
   type OfflineTokenStatus,
 } from "./token-vault-interface";
-import { encryptToken, decryptToken, generateIV } from "./encryption";
+import {
+  encryptToken,
+  decryptToken,
+  generateIV,
+  hashToken,
+} from "./encryption";
 import { makeUUID } from "./uuid";
 import {
   AuthManagerError,
@@ -17,15 +22,13 @@ import {
 } from "./vault-errors";
 import { getTTLSeconds, isExpired } from "./date-utils";
 
-/**
- * Redis Token Vault Entry (stored in Redis)
- */
 interface RedisTokenEntry {
   id: string;
   userId: string;
   tokenType: TAuthManagerTokenType;
   encryptedToken: string | null;
   iv: string | null;
+  tokenHash?: string | null;
   createdAt: string; // ISO string
   expiresAt: string; // ISO string
   metadata?: Record<string, any>;
@@ -35,14 +38,8 @@ interface RedisTokenEntry {
   sessionState?: string;
 }
 
-/**
- * Redis singleton instance
- */
 let redisInstance: Redis | null = null;
 
-/**
- * Get or create Redis connection
- */
 function getRedisClient(): Redis {
   if (redisInstance) {
     return redisInstance;
@@ -112,6 +109,8 @@ export class RedisStorage implements IStorage {
       const id = tokenId || makeUUID();
       const iv = generateIV();
       const encryptedToken = encryptToken(token, iv);
+      const tokenHash =
+        type === AuthManagerTokenTypeDict.Offline ? hashToken(token) : null;
 
       const entry: RedisTokenEntry = {
         id,
@@ -119,6 +118,7 @@ export class RedisStorage implements IStorage {
         tokenType: type,
         encryptedToken,
         iv,
+        tokenHash,
         createdAt: new Date().toISOString(),
         expiresAt: expiresAt.toISOString(),
         metadata,
@@ -278,11 +278,9 @@ export class RedisStorage implements IStorage {
 
       await this.redis.setex(tokenKey, ttl, JSON.stringify(entry));
 
-      // add token id to user's token set
       await this.redis.sadd(userTokensKey, id);
       await this.redis.expire(userTokensKey, ttl);
 
-      // create ack state index pointing to token id
       if (ackStateKey) {
         await this.redis.setex(ackStateKey, ttl, id);
       }
@@ -305,7 +303,6 @@ export class RedisStorage implements IStorage {
     sessionState?: string
   ): Promise<TokenVaultEntry | null> {
     try {
-      // Find token ID by ack state
       const ackStateKey = this.getAckStateKey(ackState);
       const tokenId = await this.redis.get(ackStateKey);
 
@@ -313,7 +310,6 @@ export class RedisStorage implements IStorage {
         return null;
       }
 
-      // Get existing entry
       const tokenKey = this.getTokenKey(tokenId);
       const data = await this.redis.get(tokenKey);
 
@@ -323,16 +319,16 @@ export class RedisStorage implements IStorage {
 
       const entry: RedisTokenEntry = JSON.parse(data);
 
-      // Encrypt token if provided
       let encryptedToken: string | null = null;
       let iv: string | null = null;
+      let tokenHash: string | null = null;
 
       if (token) {
         iv = generateIV();
         encryptedToken = encryptToken(token, iv);
+        tokenHash = hashToken(token);
       }
 
-      // Merge metadata: append new data to existing
       const existingMetadata = entry.metadata || {};
       const mergedMetadata = {
         ...existingMetadata,
@@ -340,20 +336,18 @@ export class RedisStorage implements IStorage {
         status,
       };
 
-      // Update entry
       const updatedEntry: RedisTokenEntry = {
         ...entry,
         encryptedToken,
         iv,
+        tokenHash,
         status,
         sessionState: sessionState || entry.sessionState,
         metadata: mergedMetadata,
       };
 
-      // Calculate remaining TTL
       const ttl = getTTLSeconds(new Date(entry.expiresAt));
 
-      // Store updated entry
       await this.redis.setex(tokenKey, ttl, JSON.stringify(updatedEntry));
 
       return {
@@ -379,7 +373,7 @@ export class RedisStorage implements IStorage {
     }
   }
 
-  async getByAckState(ackState: string): Promise<TokenVaultEntry | null> {
+  async retrieveByAckState(ackState: string): Promise<TokenVaultEntry | null> {
     try {
       const ackStateKey = this.getAckStateKey(ackState);
       const tokenId = await this.redis.get(ackStateKey);
@@ -417,7 +411,6 @@ export class RedisStorage implements IStorage {
       };
 
       const ttl = getTTLSeconds(new Date(entry.expiresAt));
-
       await this.redis.setex(tokenKey, ttl, JSON.stringify(updatedEntry));
 
       const ackStateKey = this.getAckStateKey(ackState);
@@ -515,6 +508,89 @@ export class RedisStorage implements IStorage {
       throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
         operation: AuthManagerOperationDict.store,
         userId,
+        storageType: AuthManagerStorageTypeDict.redis,
+        originalError: error,
+      });
+    }
+  }
+
+  async retrieveUserOfflineTokens(userId: string): Promise<TokenVaultEntry[]> {
+    try {
+      const userTokensKey = this.getUserTokensKey(userId);
+      const tokenIds = await this.redis.smembers(userTokensKey);
+
+      if (!tokenIds || tokenIds.length === 0) {
+        return [];
+      }
+
+      const entries: TokenVaultEntry[] = [];
+
+      for (const tokenId of tokenIds) {
+        const tokenKey = this.getTokenKey(tokenId);
+        const data = await this.redis.get(tokenKey);
+
+        if (data) {
+          const entry: RedisTokenEntry = JSON.parse(data);
+
+          if (entry.tokenType === AuthManagerTokenTypeDict.Offline) {
+            entries.push({
+              id: entry.id,
+              userId: entry.userId,
+              tokenType: entry.tokenType as TAuthManagerTokenType,
+              encryptedToken: entry.encryptedToken,
+              iv: entry.iv,
+              createdAt: new Date(entry.createdAt),
+              expiresAt: new Date(entry.expiresAt),
+              metadata: entry.metadata,
+              status: entry.status as OfflineTokenStatus | undefined,
+              taskId: entry.taskId,
+              ackState: entry.ackState,
+              sessionState: entry.sessionState,
+            });
+          }
+        }
+      }
+
+      entries.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+      return entries;
+    } catch (error) {
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
+        operation: AuthManagerOperationDict.retrieve,
+        userId,
+        storageType: AuthManagerStorageTypeDict.redis,
+        originalError: error,
+      });
+    }
+  }
+
+  // TODO: find better way
+  async retrieveDuplicateTokenHash(
+    tokenHash: string,
+    excludeTokenId: string
+  ): Promise<boolean> {
+    try {
+      // in redis, we need to scan all tokens to find matching hash
+      // This is less efficient than Postgres but necessary for Redis
+      const pattern = this.getTokenKey("*");
+      const keys = await this.redis.keys(pattern);
+
+      for (const key of keys) {
+        const data = await this.redis.get(key);
+        if (data) {
+          const entry: RedisTokenEntry = JSON.parse(data);
+          if (entry.tokenHash === tokenHash && entry.id !== excludeTokenId) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    } catch (error) {
+      throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
+        operation: AuthManagerOperationDict.retrieve,
+        tokenHash,
+        excludeTokenId,
         storageType: AuthManagerStorageTypeDict.redis,
         originalError: error,
       });

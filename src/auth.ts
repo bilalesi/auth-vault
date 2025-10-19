@@ -1,11 +1,6 @@
-import {
-  getServerSession,
-  type NextAuthOptions,
-  type Session as NextAuthSession,
-} from "next-auth";
+import { getServerSession, type NextAuthOptions } from "next-auth";
 import { type JWT } from "next-auth/jwt";
 
-// Extend the built-in session types
 declare module "next-auth" {
   interface Session {
     user: {
@@ -17,7 +12,7 @@ declare module "next-auth" {
     };
     accessToken?: string;
     idToken?: string;
-    persistentTokenId?: string; // ID for accessing refresh token from vault
+    persistentTokenId?: string;
     error?: string;
   }
 
@@ -59,11 +54,6 @@ const issuer = process.env.KEYCLOAK_ISSUER!;
 const clientId = process.env.KEYCLOAK_CLIENT_ID!;
 const clientSecret = process.env.KEYCLOAK_CLIENT_SECRET!;
 
-/**
- * Takes a token, and returns a new token with updated
- * `accessToken` and `accessTokenExpires`. If an error occurs,
- * returns the old token and an error property
- */
 export async function refreshAccessToken(token: TokenSet): Promise<TokenSet> {
   try {
     const tokenUrl = `${issuer}/protocol/openid-connect/token`;
@@ -139,12 +129,7 @@ export const authOptions: NextAuthOptions = {
       id: "keycloak",
       name: "Keycloak",
       type: "oauth",
-
-      // next-auth package requires clientSecret because it supports only confidential clients,
-      // while Keycloak SBO client is configured to be public and doesn't require it.
       clientSecret,
-
-      // Manually specify endpoints and issuer to avoid Keycloak's incorrect issuer URL
       issuer: issuer,
       authorization: {
         url: `${issuer}/protocol/openid-connect/auth`,
@@ -169,8 +154,6 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async jwt({ token, account, user, profile, trigger, session }) {
-      console.log("–– – account––", account);
-      // Initial sign in
       if (account && user) {
         token.accessToken = account.access_token;
         token.accessTokenExpires = account.expires_at
@@ -184,9 +167,7 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           username: (user as any).username,
         };
-        // Store refresh token in Token Vault for external services
         if (account.refresh_token && profile?.sub) {
-          console.log("–– – account", account);
           try {
             const { GetStorage } = await import(
               "@/lib/auth/token-vault-factory"
@@ -244,7 +225,7 @@ export const authOptions: NextAuthOptions = {
   },
   session: {
     strategy: "jwt",
-    maxAge: ms("10h") / 1000, // 10 hours in seconds
+    maxAge: ms("10h") / 1000,
   },
   pages: {
     signIn: "/auth/signin",

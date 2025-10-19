@@ -7,7 +7,7 @@ export interface Task {
   startedAt?: Date;
   completedAt?: Date;
   userId: string;
-  persistentTokenId?: string; // ID from token vault (persistent_token_id)
+  persistentTokenId?: string;
   offlineTokenStatus?: "pending" | "active" | "failed";
   result?: string;
   error?: string;
