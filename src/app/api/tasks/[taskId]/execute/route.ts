@@ -46,7 +46,6 @@ export async function POST(
       taskId: task.id,
     });
   } catch (error) {
-    console.error("Error executing task:", error);
     return Response.json(
       { error: "Internal server error" },
       { status: StatusCodes.INTERNAL_SERVER_ERROR }
@@ -62,7 +61,7 @@ async function simulateTaskExecution(
   const taskDB = getTaskDB();
   try {
     const tokenResponse = await fetch(
-      `${process.env.NEXTAUTH_URL}/api/auth/manager/access-token?id=${persistentTokenId}`,
+      `${process.env.NEXTAUTH_URL}/api/auth/manager/access-token?persistent_token_id=${persistentTokenId}`,
       {
         method: "GET",
         headers: {

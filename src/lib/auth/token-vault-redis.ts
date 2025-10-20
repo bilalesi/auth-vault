@@ -3,7 +3,7 @@ import {
   AuthManagerTokenTypeDict,
   OfflineTokenStatusDict,
   type IStorage,
-  type TokenVaultEntry,
+  type AuthManagerVaultEntry,
   type TAuthManagerTokenType,
   type OfflineTokenStatus,
 } from "./token-vault-interface";
@@ -17,10 +17,10 @@ import { makeUUID } from "./uuid";
 import {
   AuthManagerError,
   AuthManagerErrorDict,
-  AuthManagerOperationDict,
   AuthManagerStorageTypeDict,
 } from "./vault-errors";
 import { getTTLSeconds, isExpired } from "./date-utils";
+import { logger, AuthLogEventDict } from "@/lib/logger";
 
 interface RedisTokenEntry {
   id: string;
@@ -64,17 +64,29 @@ function getRedisClient(): Redis {
   });
 
   redisInstance.on("error", (error) => {
-    console.error("Redis connection error:", error);
+    logger.storage(
+      AuthLogEventDict.vaultError,
+      {
+        component: "AuthManagerRedisStorage",
+        operation: "connect",
+        storageType: AuthManagerStorageTypeDict.redis,
+      },
+      error
+    );
   });
 
   redisInstance.on("connect", () => {
-    console.log("Redis connected successfully");
+    logger.storage(AuthLogEventDict.vaultStore, {
+      component: "AuthManagerRedisStorage",
+      operation: "connect",
+      storageType: AuthManagerStorageTypeDict.redis,
+    });
   });
 
   return redisInstance;
 }
 
-export class RedisStorage implements IStorage {
+export class AuthManagerRedisStorage implements IStorage {
   private redis: Redis;
 
   constructor() {
@@ -134,7 +146,7 @@ export class RedisStorage implements IStorage {
       return id;
     } catch (error) {
       throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
-        operation: AuthManagerOperationDict.store,
+        operation: "create",
         userId,
         persistentTokenId: tokenId,
         storageType: AuthManagerStorageTypeDict.redis,
@@ -143,7 +155,7 @@ export class RedisStorage implements IStorage {
     }
   }
 
-  async retrieve(tokenId: string): Promise<TokenVaultEntry | null> {
+  async retrieve(tokenId: string): Promise<AuthManagerVaultEntry | null> {
     try {
       const tokenKey = this.getTokenKey(tokenId);
       const data = await this.redis.get(tokenKey);
@@ -181,7 +193,7 @@ export class RedisStorage implements IStorage {
       };
     } catch (error) {
       throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
-        operation: AuthManagerOperationDict.retrieve,
+        operation: "retrieve",
         persistentTokenId: tokenId,
         storageType: AuthManagerStorageTypeDict.redis,
         originalError: error,
@@ -205,7 +217,7 @@ export class RedisStorage implements IStorage {
       await this.redis.del(tokenKey);
     } catch (error) {
       throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
-        operation: AuthManagerOperationDict.delete,
+        operation: "delete",
         persistentTokenId: tokenId,
         storageType: AuthManagerStorageTypeDict.redis,
         originalError: error,
@@ -216,11 +228,17 @@ export class RedisStorage implements IStorage {
   async cleanup(): Promise<number> {
     // redis auto handles expiration with ttl
     // this method is a no-op for Redis but kept for interface compatibility
-    console.log("Redis cleanup: TTL handles expiration automatically");
+    logger.storage(AuthLogEventDict.vaultDelete, {
+      component: "AuthManagerRedisStorage",
+      operation: "cleanup",
+      storageType: AuthManagerStorageTypeDict.redis,
+    });
     return 0;
   }
 
-  async getUserRefreshToken(userId: string): Promise<TokenVaultEntry | null> {
+  async getUserRefreshToken(
+    userId: string
+  ): Promise<AuthManagerVaultEntry | null> {
     try {
       const userRefreshKey = this.getUserRefreshTokenKey(userId);
       const tokenId = await this.redis.get(userRefreshKey);
@@ -238,7 +256,7 @@ export class RedisStorage implements IStorage {
       return null;
     } catch (error) {
       throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
-        operation: AuthManagerOperationDict.get_user_tokens,
+        operation: "get_user_refresh_token",
         userId,
         storageType: AuthManagerStorageTypeDict.redis,
         originalError: error,
@@ -288,7 +306,7 @@ export class RedisStorage implements IStorage {
       return id;
     } catch (error) {
       throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
-        operation: AuthManagerOperationDict.store,
+        operation: "makePendingOfflineToken",
         userId,
         storageType: AuthManagerStorageTypeDict.redis,
         originalError: error,
@@ -301,7 +319,7 @@ export class RedisStorage implements IStorage {
     token: string | null,
     status: OfflineTokenStatus,
     sessionState?: string
-  ): Promise<TokenVaultEntry | null> {
+  ): Promise<AuthManagerVaultEntry | null> {
     try {
       const ackStateKey = this.getAckStateKey(ackState);
       const tokenId = await this.redis.get(ackStateKey);
@@ -366,14 +384,16 @@ export class RedisStorage implements IStorage {
       };
     } catch (error) {
       throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
-        operation: AuthManagerOperationDict.store,
+        operation: "updateOfflineTokenByState",
         storageType: AuthManagerStorageTypeDict.redis,
         originalError: error,
       });
     }
   }
 
-  async retrieveByAckState(ackState: string): Promise<TokenVaultEntry | null> {
+  async retrieveByAckState(
+    ackState: string
+  ): Promise<AuthManagerVaultEntry | null> {
     try {
       const ackStateKey = this.getAckStateKey(ackState);
       const tokenId = await this.redis.get(ackStateKey);
@@ -385,7 +405,7 @@ export class RedisStorage implements IStorage {
       return await this.retrieve(tokenId);
     } catch (error) {
       throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
-        operation: AuthManagerOperationDict.retrieve,
+        operation: "retrieveByAckState",
         storageType: AuthManagerStorageTypeDict.redis,
         originalError: error,
       });
@@ -420,7 +440,7 @@ export class RedisStorage implements IStorage {
         throw error;
       }
       throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
-        operation: AuthManagerOperationDict.store,
+        operation: "updateAckState",
         persistentTokenId: tokenId,
         storageType: AuthManagerStorageTypeDict.redis,
         originalError: error,
@@ -471,7 +491,12 @@ export class RedisStorage implements IStorage {
           await this.redis.setex(tokenKey, ttl, JSON.stringify(updatedEntry));
           await this.redis.setex(userRefreshKey, ttl, existingTokenId);
 
-          console.log("Refresh token updated for user:", userId);
+          logger.storage(AuthLogEventDict.tokenRefreshed, {
+            component: "AuthManagerRedisStorage",
+            operation: "upsertRefreshToken",
+            userId,
+            persistentTokenId: existingTokenId,
+          });
           return existingTokenId;
         }
       }
@@ -502,11 +527,17 @@ export class RedisStorage implements IStorage {
       await this.redis.expire(userTokensKey, ttl);
       await this.redis.setex(userRefreshKey, ttl, id);
 
-      console.log("Refresh token created for user:", userId);
+      logger.storage(AuthLogEventDict.tokenCreated, {
+        component: "AuthManagerRedisStorage",
+        operation: "upsertRefreshToken",
+        userId,
+        persistentTokenId: id,
+        tokenType: AuthManagerTokenTypeDict.Refresh,
+      });
       return id;
     } catch (error) {
       throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
-        operation: AuthManagerOperationDict.store,
+        operation: "upsertRefreshToken",
         userId,
         storageType: AuthManagerStorageTypeDict.redis,
         originalError: error,
@@ -514,7 +545,9 @@ export class RedisStorage implements IStorage {
     }
   }
 
-  async retrieveUserOfflineTokens(userId: string): Promise<TokenVaultEntry[]> {
+  async retrieveUserOfflineTokens(
+    userId: string
+  ): Promise<AuthManagerVaultEntry[]> {
     try {
       const userTokensKey = this.getUserTokensKey(userId);
       const tokenIds = await this.redis.smembers(userTokensKey);
@@ -523,7 +556,7 @@ export class RedisStorage implements IStorage {
         return [];
       }
 
-      const entries: TokenVaultEntry[] = [];
+      const entries: AuthManagerVaultEntry[] = [];
 
       for (const tokenId of tokenIds) {
         const tokenKey = this.getTokenKey(tokenId);
@@ -556,7 +589,7 @@ export class RedisStorage implements IStorage {
       return entries;
     } catch (error) {
       throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
-        operation: AuthManagerOperationDict.retrieve,
+        operation: "retrieveUserOfflineTokens",
         userId,
         storageType: AuthManagerStorageTypeDict.redis,
         originalError: error,
@@ -588,7 +621,7 @@ export class RedisStorage implements IStorage {
       return false;
     } catch (error) {
       throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
-        operation: AuthManagerOperationDict.retrieve,
+        operation: "retrieveDuplicateTokenHash",
         tokenHash,
         excludeTokenId,
         storageType: AuthManagerStorageTypeDict.redis,
@@ -600,14 +633,14 @@ export class RedisStorage implements IStorage {
   async retrieveBySessionState(
     sessionState: string,
     excludeTokenId: string
-  ): Promise<TokenVaultEntry[]> {
+  ): Promise<AuthManagerVaultEntry[]> {
     try {
       // Redis doesn't have a direct way to query by sessionState
       // We need to scan all tokens (not ideal for large datasets)
       const pattern = this.getTokenKey("*");
       const keys = await this.redis.keys(pattern);
 
-      const entries: TokenVaultEntry[] = [];
+      const entries: AuthManagerVaultEntry[] = [];
 
       for (const key of keys) {
         const data = await this.redis.get(key);
@@ -643,7 +676,7 @@ export class RedisStorage implements IStorage {
       return entries;
     } catch (error) {
       throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
-        operation: AuthManagerOperationDict.retrieve,
+        operation: "retrieveBySessionState",
         sessionState,
         excludeTokenId,
         storageType: AuthManagerStorageTypeDict.redis,

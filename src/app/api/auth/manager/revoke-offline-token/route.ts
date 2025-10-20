@@ -5,12 +5,17 @@ import { GetStorage } from "@/lib/auth/token-vault-factory";
 import { decryptToken } from "@/lib/auth/encryption";
 import { validateRequest } from "@/lib/auth/validate-token";
 import { AuthManagerTokenTypeDict } from "@/lib/auth/token-vault-interface";
-import { makeResponse, makeVaultError, throwError } from "@/lib/auth/response";
+import {
+  makeResponse,
+  makeAuthManagerError,
+  throwError,
+} from "@/lib/auth/response";
 import { getExpirationDate, TokenExpirationDict } from "@/lib/auth/date-utils";
 import {
   AuthManagerError,
   AuthManagerErrorDict,
 } from "@/lib/auth/vault-errors";
+import { logger, AuthLogEventDict } from "@/lib/logger";
 
 /**
  * get /api/auth/manager/offline-token-id
@@ -29,7 +34,7 @@ export async function GET(request: NextRequest) {
     const validation = await validateRequest(request);
 
     if (!validation.valid) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.unauthorized.code)
       );
     }
@@ -38,7 +43,7 @@ export async function GET(request: NextRequest) {
     const entry = await store.getUserRefreshToken(validation.userId);
 
     if (!entry) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.no_refresh_token.code, {
           userId: validation.userId,
         })
@@ -46,7 +51,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (!entry.encryptedToken || !entry.iv) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.no_refresh_token.code, {
           userId: validation.userId,
           reason: "Refresh token is pending or not available",
@@ -82,13 +87,13 @@ export async function GET(request: NextRequest) {
         });
       }
 
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
           userId: validation.userId,
         })
       );
     } catch (error: any) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
           userId: validation.userId,
           originalError: error,
@@ -128,22 +133,23 @@ export async function POST(request: NextRequest) {
     const validation = await validateRequest(request);
 
     if (!validation.valid) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.unauthorized.code)
       );
     }
 
     const body = await request.json();
     const RevokeTokenRequestSchema = z.object({
-      persistentTokenId: z.uuid(),
+      persistent_token_id: z.uuid(),
     });
 
-    const { persistentTokenId } = RevokeTokenRequestSchema.parse(body);
+    const { persistent_token_id: persistentTokenId } =
+      RevokeTokenRequestSchema.parse(body);
     const store = GetStorage();
     const entry = await store.retrieve(persistentTokenId);
 
     if (!entry) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.token_not_found.code, {
           persistentTokenId,
         })
@@ -151,7 +157,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (entry.userId !== validation.userId) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.unauthorized.code, {
           reason: "User does not own this token",
           persistentTokenId,
@@ -160,7 +166,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (entry.tokenType !== AuthManagerTokenTypeDict.Offline) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.invalid_token_type.code, {
           persistentTokenId,
           reason: "Only offline tokens can be revoked via this endpoint",
@@ -169,7 +175,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!entry.encryptedToken || !entry.iv) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.invalid_token_type.code, {
           persistentTokenId,
           reason: "Token is pending and cannot be revoked yet",
@@ -178,7 +184,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!entry.sessionState) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.invalid_token_type.code, {
           persistentTokenId,
           reason: "Token does not have a session_state",
@@ -191,9 +197,14 @@ export async function POST(request: NextRequest) {
       persistentTokenId
     );
 
-    console.log(
-      `Found ${otherTokensWithSameSession.length} other token(s) with session_state: ${entry.sessionState}`
-    );
+    logger.api(AuthLogEventDict.offlineTokenRevoked, {
+      component: "RevokeOfflineTokenAPI",
+      operation: "checkSessionTokens",
+      userId: validation.userId,
+      persistentTokenId,
+      sessionState: entry.sessionState,
+      tokensWithSameSession: otherTokensWithSameSession.length,
+    });
 
     // Delete this token from vault
     await store.delete(persistentTokenId);
@@ -204,19 +215,34 @@ export async function POST(request: NextRequest) {
       try {
         await keycloakClient.revokeSession(entry.sessionState);
         sessionRevoked = true;
-        console.log(
-          "Session revoked in Keycloak (last token):",
-          entry.sessionState
+        logger.api(AuthLogEventDict.offlineTokenRevoked, {
+          component: "RevokeOfflineTokenAPI",
+          operation: "revokeSession",
+          userId: validation.userId,
+          sessionState: entry.sessionState,
+          persistentTokenId,
+        });
+      } catch (err) {
+        logger.api(
+          AuthLogEventDict.keycloakError,
+          {
+            component: "RevokeOfflineTokenAPI",
+            operation: "revokeSession",
+            userId: validation.userId,
+            sessionState: entry.sessionState,
+          },
+          err
         );
-      } catch (error) {
-        console.error("Error revoking session in Keycloak:", error);
         // Continue even if Keycloak session revoke failed
       }
     } else {
-      console.log(
-        `Session not revoked (${otherTokensWithSameSession.length} other token(s) still exist):`,
-        entry.sessionState
-      );
+      logger.api(AuthLogEventDict.offlineTokenRevoked, {
+        component: "RevokeOfflineTokenAPI",
+        operation: "skipSessionRevoke",
+        userId: validation.userId,
+        sessionState: entry.sessionState,
+        tokensRemaining: otherTokensWithSameSession.length,
+      });
     }
 
     return makeResponse({
@@ -271,7 +297,7 @@ export async function DELETE(request: NextRequest) {
     const validation = await validateRequest(request);
 
     if (!validation.valid) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.unauthorized.code)
       );
     }
@@ -286,7 +312,7 @@ export async function DELETE(request: NextRequest) {
     const entry = await store.retrieve(persistentTokenId);
 
     if (!entry) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.token_not_found.code, {
           persistentTokenId,
         })
@@ -294,7 +320,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     if (entry.tokenType !== AuthManagerTokenTypeDict.Offline) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.invalid_token_type.code, {
           persistentTokenId,
         })
@@ -302,7 +328,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     if (!entry.encryptedToken || !entry.iv) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.invalid_token_type.code, {
           persistentTokenId,
           reason: "Token is pending and cannot be revoked yet",
@@ -325,19 +351,33 @@ export async function DELETE(request: NextRequest) {
 
       if (duplicateFound) {
         shouldRevoke = false;
-        console.log(
-          "Token hash found in other entries, skipping Keycloak revocation:",
-          persistentTokenId
-        );
+        logger.api(AuthLogEventDict.tokenRevoked, {
+          component: "RevokeOfflineTokenAPI",
+          operation: "skipTokenRevoke",
+          persistentTokenId,
+          reason: "Duplicate token hash found",
+        });
       }
     }
 
     if (shouldRevoke) {
       try {
         await keycloakClient.revokeToken(token);
-        console.log("Offline token revoked in Keycloak:", persistentTokenId);
-      } catch (error) {
-        console.error("Error revoking token in Keycloak:", error);
+        logger.api(AuthLogEventDict.tokenRevoked, {
+          component: "RevokeOfflineTokenAPI",
+          operation: "revokeToken",
+          persistentTokenId,
+        });
+      } catch (err) {
+        logger.api(
+          AuthLogEventDict.keycloakError,
+          {
+            component: "RevokeOfflineTokenAPI",
+            operation: "revokeToken",
+            persistentTokenId,
+          },
+          err
+        );
         // Continue even if Keycloak revoke failed
       }
     }

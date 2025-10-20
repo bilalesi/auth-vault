@@ -1,12 +1,9 @@
 import type { IStorage } from "./token-vault-interface";
-import { PgStorage } from "./token-vault-postgres";
-import { RedisStorage } from "./token-vault-redis";
+import { AuthManagerPgStorage } from "./token-vault-postgres";
+import { AuthManagerRedisStorage } from "./token-vault-redis";
 import { match } from "ts-pattern";
-import {
-  AuthManagerError,
-  AuthManagerErrorDict,
-  AuthManagerOperationDict,
-} from "./vault-errors";
+import { AuthManagerError, AuthManagerErrorDict } from "./vault-errors";
+import { AuthLogEventDict, logger } from "../logger";
 
 export const StorageTypeDict = {
   pg: "pg",
@@ -37,22 +34,37 @@ export function GetStorage(): IStorage {
 
   if (!storageType) {
     throw new AuthManagerError(AuthManagerErrorDict.connection_error.code, {
-      operation: AuthManagerOperationDict.initialize,
+      operation: "initialize_storage",
     });
   }
 
   return (tokenVaultInstance = match({ storageType })
     .with({ storageType: StorageTypeDict.pg }, () => {
-      console.log("Using PostgreSQL Token Vault");
-      return new PgStorage();
+      logger.storage(
+        AuthLogEventDict.storageInit,
+        {
+          component: "Storage",
+          operation: "GetStorage",
+        },
+        "Using Postgres storage"
+      );
+      return new AuthManagerPgStorage();
     })
     .with({ storageType: StorageTypeDict.redis }, () => {
-      console.log("Using Redis Token Vault");
-      return new RedisStorage();
+      logger.storage(
+        AuthLogEventDict.storageInit,
+        {
+          component: "Storage",
+          operation: "GetStorage",
+        },
+        "Using Redis storage"
+      );
+      return new AuthManagerRedisStorage();
     })
     .otherwise(() => {
       throw new AuthManagerError(AuthManagerErrorDict.connection_error.code, {
-        operation: AuthManagerOperationDict.initialize,
+        operation: "initialize_storage",
+        component: "Storage",
       });
     }));
 }

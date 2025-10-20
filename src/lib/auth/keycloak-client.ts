@@ -1,5 +1,6 @@
 import { KeycloakContentType } from "./keycloak-schemas";
 import { AuthManagerError, AuthManagerErrorDict } from "./vault-errors";
+import { logger, AuthLogEventDict } from "@/lib/logger";
 
 export const KeycloakOperationDict = {
   refreshAccessToken: "refreshAccessToken",
@@ -157,7 +158,14 @@ export class KeycloakClient {
       if (AuthManagerError.is(error)) {
         throw error;
       }
-      console.error("Error refreshing access token:", error);
+      logger.keycloak(
+        AuthLogEventDict.keycloakError,
+        {
+          component: "KeycloakClient",
+          operation: KeycloakOperationDict.refreshAccessToken,
+        },
+        error
+      );
       throw new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
         originalError: error,
         operation: KeycloakOperationDict.refreshAccessToken,
@@ -212,10 +220,17 @@ export class KeycloakClient {
       // The refresh_token in the response is now an offline token (long-lived)
       return tokenResponse;
     } catch (error) {
+      logger.keycloak(
+        AuthLogEventDict.keycloakError,
+        {
+          component: "KeycloakClient",
+          operation: KeycloakOperationDict.requestOfflineToken,
+        },
+        error
+      );
       if (AuthManagerError.is(error)) {
         throw error;
       }
-      console.error("Error requesting offline token:", error);
       throw new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
         originalError: error,
         operation: KeycloakOperationDict.requestOfflineToken,
@@ -265,10 +280,17 @@ export class KeycloakClient {
         });
       }
     } catch (error) {
+      logger.keycloak(
+        AuthLogEventDict.keycloakError,
+        {
+          component: "KeycloakClient",
+          operation: KeycloakOperationDict.revokeToken,
+        },
+        error
+      );
       if (AuthManagerError.is(error)) {
         throw error;
       }
-      console.error("Error revoking token:", error);
       throw new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
         originalError: error,
         operation: KeycloakOperationDict.revokeToken,
@@ -322,10 +344,17 @@ export class KeycloakClient {
 
       return await response.json();
     } catch (error) {
+      logger.keycloak(
+        AuthLogEventDict.keycloakError,
+        {
+          component: "KeycloakClient",
+          operation: KeycloakOperationDict.introspectToken,
+        },
+        error
+      );
       if (AuthManagerError.is(error)) {
         throw error;
       }
-      console.error("Error introspecting token:", error);
       throw new AuthManagerError(
         AuthManagerErrorDict.token_introspection_failed.code,
         {
@@ -366,10 +395,17 @@ export class KeycloakClient {
 
       return await response.json();
     } catch (error) {
+      logger.keycloak(
+        AuthLogEventDict.keycloakError,
+        {
+          component: "KeycloakClient",
+          operation: KeycloakOperationDict.getUserInfo,
+        },
+        error
+      );
       if (AuthManagerError.is(error)) {
         throw error;
       }
-      console.error("Error getting user info:", error);
       throw new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
         originalError: error,
         operation: KeycloakOperationDict.getUserInfo,
@@ -418,12 +454,22 @@ export class KeycloakClient {
         });
       }
 
-      console.log("Token successfully revoked in Keycloak");
+      logger.keycloak(AuthLogEventDict.tokenRevoked, {
+        component: "KeycloakClient",
+        operation: KeycloakOperationDict.revokeToken,
+      });
     } catch (error) {
+      logger.keycloak(
+        AuthLogEventDict.keycloakError,
+        {
+          component: "KeycloakClient",
+          operation: KeycloakOperationDict.revokeToken,
+        },
+        error
+      );
       if (AuthManagerError.is(error)) {
         throw error;
       }
-      console.error("Error revoking token:", error);
       throw new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
         originalError: error,
         operation: KeycloakOperationDict.revokeToken,
@@ -481,12 +527,24 @@ export class KeycloakClient {
         });
       }
 
-      console.log("Session successfully revoked in Keycloak:", sessionId);
+      logger.keycloak(AuthLogEventDict.offlineTokenRevoked, {
+        component: "KeycloakClient",
+        operation: "revokeSession",
+        sessionState: sessionId,
+      });
     } catch (error) {
+      logger.keycloak(
+        AuthLogEventDict.keycloakError,
+        {
+          component: "KeycloakClient",
+          operation: "revokeSession",
+          sessionState: sessionId,
+        },
+        error
+      );
       if (AuthManagerError.is(error)) {
         throw error;
       }
-      console.error("Error revoking session:", error);
       throw new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
         originalError: error,
         operation: "revokeSession",
@@ -526,7 +584,14 @@ export class KeycloakClient {
       const data = await response.json();
       return data.access_token;
     } catch (error) {
-      console.error("Error getting admin token:", error);
+      logger.keycloak(
+        AuthLogEventDict.keycloakError,
+        {
+          component: "KeycloakClient",
+          operation: "getAdminToken",
+        },
+        error
+      );
       throw error;
     }
   }

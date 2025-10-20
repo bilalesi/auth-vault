@@ -4,6 +4,7 @@ import { match } from "ts-pattern";
 import get from "es-toolkit/compat/get";
 import { StatusCodes } from "http-status-codes";
 import { AuthManagerError, AuthManagerErrorDict } from "./vault-errors";
+import { logger, AuthLogEventDict } from "@/lib/logger";
 
 interface ErrorResponse {
   error: string;
@@ -30,7 +31,7 @@ export function makeResponse<T>(
  * @returns A `NextResponse` object containing the error response in JSON format
  *          and the appropriate HTTP status code.
  */
-export function makeVaultError(
+export function makeAuthManagerError(
   error: AuthManagerError
 ): NextResponse<ErrorResponse> {
   const statusCode = get(
@@ -57,6 +58,11 @@ export function makeVaultError(
  *          and a status code of 400 (Bad Request).
  */
 export function makeZodError(error: z.ZodError): NextResponse<ErrorResponse> {
+  logger.api(AuthLogEventDict.validationError, {
+    component: "ZodValidation",
+    issues: error.issues,
+    error: "validation errors",
+  });
   return NextResponse.json(
     {
       error: AuthManagerErrorDict.invalid_request.message,
@@ -81,16 +87,34 @@ export function makeZodError(error: z.ZodError): NextResponse<ErrorResponse> {
  */
 export function throwError(error: unknown): NextResponse<ErrorResponse> {
   return match(error)
-    .when(AuthManagerError.is, (err) => makeVaultError(err))
+    .when(AuthManagerError.is, (err) => {
+      logger.api("Error in running endpoint: ", {
+        component: "ResponseHandler",
+        operation: "ThrowAuthManagerError",
+        error: err,
+      });
+      return makeAuthManagerError(err);
+    })
     .when(
       (err): err is z.ZodError => err instanceof z.ZodError,
-      (err) => makeZodError(err)
+      (err) => {
+        logger.api("Error in running endpoint: ", {
+          component: "ResponseHandler",
+          operation: "ThrowValidationError",
+          error: err,
+        });
+        return makeZodError(err);
+      }
     )
     .when(
       (err): err is Error => err instanceof Error,
       (err) => {
-        console.error("unhandled error:", err);
-        return makeVaultError(
+        logger.api("Error in running endpoint: ", {
+          component: "ResponseHandler",
+          operation: "ThrowRegularError",
+          error: err,
+        });
+        return makeAuthManagerError(
           new AuthManagerError(AuthManagerErrorDict.internal_error.code, {
             originalError: err,
           })
@@ -98,8 +122,12 @@ export function throwError(error: unknown): NextResponse<ErrorResponse> {
       }
     )
     .otherwise(() => {
-      console.error("unknown error:", error);
-      return makeVaultError(
+      logger.api("Error in running endpoint: ", {
+        component: "ResponseHandler",
+        operation: "ThrowIndeterminateError",
+        error,
+      });
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.internal_error.code, {
           originalError: error,
         })

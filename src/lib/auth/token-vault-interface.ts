@@ -19,7 +19,7 @@ export type OfflineTokenStatus =
  * Token Vault Entry
  * Represents a stored token in the vault
  */
-export interface TokenVaultEntry {
+export interface AuthManagerVaultEntry {
   id: string;
   userId: string;
   tokenType: TAuthManagerTokenType;
@@ -64,7 +64,7 @@ export interface IStorage {
    * @param tokenId - Persistent token ID
    * @returns Token vault entry or null if not found
    */
-  retrieve(tokenId: string): Promise<TokenVaultEntry | null>;
+  retrieve(tokenId: string): Promise<AuthManagerVaultEntry | null>;
 
   /**
    * Delete a token from the vault
@@ -83,7 +83,7 @@ export interface IStorage {
    * @param userId - User ID
    * @returns Array of token vault entries
    */
-  getUserRefreshToken(userId: string): Promise<TokenVaultEntry | null>;
+  getUserRefreshToken(userId: string): Promise<AuthManagerVaultEntry | null>;
 
   /**
    * Create a pending offline token request
@@ -115,14 +115,14 @@ export interface IStorage {
     token: string | null,
     status: OfflineTokenStatus,
     sessionState?: string
-  ): Promise<TokenVaultEntry | null>;
+  ): Promise<AuthManagerVaultEntry | null>;
 
   /**
    * Get offline token by acknowledgment state
    * @param ackState - Acknowledgment state
    * @returns Token vault entry or null if not found
    */
-  retrieveByAckState(ackState: string): Promise<TokenVaultEntry | null>;
+  retrieveByAckState(ackState: string): Promise<AuthManagerVaultEntry | null>;
 
   /**
    * Update acknowledgment state for a pending offline token request
@@ -154,7 +154,7 @@ export interface IStorage {
    * @param userId - User ID
    * @returns Array of offline token vault entries
    */
-  retrieveUserOfflineTokens(userId: string): Promise<TokenVaultEntry[]>;
+  retrieveUserOfflineTokens(userId: string): Promise<AuthManagerVaultEntry[]>;
 
   /**
    * Check if a token hash exists in the vault (excluding a specific token ID)
@@ -178,5 +178,5 @@ export interface IStorage {
   retrieveBySessionState(
     sessionState: string,
     excludeTokenId: string
-  ): Promise<TokenVaultEntry[]>;
+  ): Promise<AuthManagerVaultEntry[]>;
 }

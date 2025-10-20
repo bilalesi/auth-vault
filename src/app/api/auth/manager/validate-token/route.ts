@@ -4,7 +4,11 @@ import {
   AuthManagerError,
   AuthManagerErrorDict,
 } from "@/lib/auth/vault-errors";
-import { makeResponse, makeVaultError, throwError } from "@/lib/auth/response";
+import {
+  makeResponse,
+  makeAuthManagerError,
+  throwError,
+} from "@/lib/auth/response";
 
 /**
  * Handles the GET request for validating a token.
@@ -20,7 +24,7 @@ export async function GET(request: NextRequest) {
   try {
     const validation = await validateRequest(request);
     if (!validation.valid) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.unauthorized.code)
       );
     }

@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "dev:pretty": "next dev --turbopack 2>&1 | pnpm exec pino-pretty --colorize",
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
@@ -47,10 +48,12 @@
     "@types/pg": "^8.15.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/signale": "^1.4.7",
     "@types/uuid": "^11.0.0",
     "drizzle-kit": "^0.31.5",
     "eslint": "^9",
     "eslint-config-next": "15.5.6",
+    "signale": "^1.4.0",
     "tailwindcss": "^4",
     "tsx": "^4.20.6",
     "typescript": "^5"

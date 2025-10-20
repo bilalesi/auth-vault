@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { getKeycloakClient } from "@/lib/auth/keycloak-client";
 import { GetStorage } from "@/lib/auth/token-vault-factory";
-import { makeResponse, makeVaultError, throwError } from "@/lib/auth/response";
+import { makeAuthManagerError, throwError } from "@/lib/auth/response";
 import {
   AuthManagerError,
   AuthManagerErrorDict,
@@ -12,6 +12,7 @@ import {
   KeycloakContentType,
   TokenResponseSchema,
 } from "@/lib/auth/keycloak-schemas";
+import { logger } from "@/lib/logger";
 
 /**
  * Handles the GET request for the offline callback endpoint.
@@ -48,7 +49,7 @@ export async function GET(request: NextRequest) {
     const errorDescription = searchParams.get("error_description");
 
     if (error) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
           reason: `Consent flow failed: ${errorDescription || error}`,
           keycloakError: error,
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (!code || !ackState) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.invalid_request.code, {
           reason: "Missing code or state parameter",
         })
@@ -66,7 +67,7 @@ export async function GET(request: NextRequest) {
 
     const statePayload = parseAckState(ackState);
     if (!statePayload) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.invalid_request.code, {
           reason: "Invalid state token",
         })
@@ -77,7 +78,7 @@ export async function GET(request: NextRequest) {
     const entry = await vault.retrieveByAckState(ackState);
 
     if (!entry) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.token_not_found.code, {
           reason: "Pending offline token request not found",
           stateToken: ackState,
@@ -86,7 +87,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (entry.id !== statePayload.persistentTokenId) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.invalid_request.code, {
           reason: "State token mismatch",
         })
@@ -131,19 +132,14 @@ export async function GET(request: NextRequest) {
       if (!tokenSchemed.refresh_token) {
         throw new Error("No refresh token received from Keycloak");
       }
-
-      await vault.updateOfflineTokenByState(
+      logger.info("offline refresh token  is ready", tokenSchemed);
+      const offline = await vault.updateOfflineTokenByState(
         ackState,
         tokenSchemed.refresh_token,
         OfflineTokenStatusDict.Active,
         tokenSchemed.session_state
       );
-
-      console.log(
-        "Offline token successfully stored:",
-        statePayload.persistentTokenId
-      );
-
+      logger.api("offline token entry is ready", offline);
       // TODO: delete this extra tasks tests
       try {
         const { getTaskDB } = await import("@/lib/task-manager/in-memory-db");
@@ -164,11 +160,6 @@ export async function GET(request: NextRequest) {
       // return makeResponse({
       //   session_state: tokenSchemed.session_state,
       // });
-      // TODO: here should call TaskManager API to update the task with the persistentTokenId
-      // TODO: ask JDC where to redirect after callback finished
-      // TODO: (it should be a new page that tells the user you can close this window or error happen)
-      // TODO: (this should be some task or activity page)
-      // Simulate calling the access token endpoint
       const persistTaskUrl = `${process.env.NEXTAUTH_URL}/api/tasks/${statePayload.taskId}/link-persistent-id`;
       const persistResponse = await fetch(persistTaskUrl, {
         method: "post",
@@ -180,17 +171,15 @@ export async function GET(request: NextRequest) {
       });
 
       if (!persistResponse.ok) {
-        console.log("———persistent is failed", await persistResponse.text());
         throw new Error(
           `Failed to get access token: ${persistResponse.statusText}`
         );
       }
-      console.log("———persistent id saved", await persistResponse.json());
+
       return Response.redirect(
         `${process.env.NEXTAUTH_URL}/tasks?success=true&taskId=${statePayload.taskId}&persistentTokenId=${entry.id}`
       );
     } catch (error: any) {
-      console.error("Error exchanging code for offline token:", error);
       await vault.updateOfflineTokenByState(
         ackState,
         null,
@@ -207,7 +196,7 @@ export async function GET(request: NextRequest) {
         console.error("Error updating task:", error);
       }
 
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
           reason: "Failed to exchange authorization code for offline token",
           originalError: error,

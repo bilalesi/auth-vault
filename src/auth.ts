@@ -72,11 +72,16 @@ export async function refreshAccessToken(token: TokenSet): Promise<TokenSet> {
     });
 
     const refreshedTokens = await response.json();
-    console.log("–– – refreshAccessToken – refreshedTokens––", refreshedTokens);
 
     if (!response.ok) {
       throw refreshedTokens;
     }
+
+    console.info("[token.refreshed]", {
+      component: "NextAuth",
+      operation: "refreshAccessToken",
+      userId: token.user?.id,
+    });
 
     const newRefreshToken = refreshedTokens.refresh_token ?? token.refreshToken;
 
@@ -104,18 +109,30 @@ export async function refreshAccessToken(token: TokenSet): Promise<TokenSet> {
 
         token.persistentTokenId = persistentTokenId;
         (token as any).refreshCount = ((token as any).refreshCount || 0) + 1;
-        console.log("Refresh token upserted in vault:", persistentTokenId);
-      } catch (error) {
-        console.error("Failed to upsert refresh token in vault:", error);
+        console.info("[vault.store]", {
+          component: "NextAuth",
+          operation: "upsertRefreshToken",
+          userId: token.user?.id,
+          persistentTokenId,
+        });
+      } catch (err) {
+        console.error("vault.error", {
+          component: "NextAuth",
+          operation: "upsertRefreshToken",
+          userId: token.user?.id,
+        });
+
         // Don't fail the refresh if vault update fails
       }
     }
 
     return token;
-  } catch (error) {
-    // TODO: log to Sentry once it's enabled
-    // eslint-disable-next-line no-console
-    console.log(error);
+  } catch (err) {
+    console.error("[token.refreshed]: Failed to refresh access token", {
+      component: "NextAuth",
+      operation: "refreshAccessToken",
+      userId: token.user?.id,
+    });
 
     token.error = "RefreshAccessTokenError";
     return token;
@@ -188,9 +205,18 @@ export const authOptions: NextAuthOptions = {
             );
 
             token.persistentTokenId = persistentTokenId;
-            console.log("Refresh token upserted in vault:", persistentTokenId);
-          } catch (error) {
-            console.error("Failed to upsert refresh token in vault:", error);
+            console.info("[vault.store]", {
+              component: "NextAuth",
+              operation: "upsertRefreshToken",
+              userId: profile?.sub || user.id,
+              persistentTokenId,
+            });
+          } catch (err) {
+            console.error("vault.error", {
+              component: "NextAuth",
+              operation: "upsertRefreshToken",
+              userId: profile?.sub || user.id,
+            });
           }
         }
 

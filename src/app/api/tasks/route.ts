@@ -24,8 +24,7 @@ export async function GET(request: NextRequest) {
     const tasks = taskDB.getUserTasks(validation.userId);
 
     return Response.json({ tasks });
-  } catch (error) {
-    console.error("Error fetching tasks:", error);
+  } catch (err) {
     return Response.json(
       { error: "Internal server error" },
       { status: StatusCodes.INTERNAL_SERVER_ERROR }
@@ -58,11 +57,10 @@ export async function POST(request: NextRequest) {
       { task, message: "Task created successfully" },
       { status: StatusCodes.CREATED }
     );
-  } catch (error) {
-    console.error("Error creating task:", error);
-    if (error instanceof z.ZodError) {
+  } catch (err) {
+    if (err instanceof z.ZodError) {
       return Response.json(
-        { error: "Invalid request", details: error.issues },
+        { error: "Invalid request", details: err.issues },
         { status: StatusCodes.BAD_REQUEST }
       );
     }

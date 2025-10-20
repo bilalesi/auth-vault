@@ -113,24 +113,6 @@ export const AuthManagerErrorDict = {
 export type TAuthManagerCode = keyof typeof AuthManagerErrorDict;
 
 /**
- * A dictionary of operations supported by the Auth Manager.
- * Each key represents an operation name, and its value is a string identifier for that operation.
- */
-export const AuthManagerOperationDict = {
-  store: "store",
-  retrieve: "retrieve",
-  delete: "delete",
-  cleanup: "cleanup",
-  get_user_tokens: "get_user_tokens",
-  initialize: "initialize",
-  validate_token: "validate_token",
-  introspect_token: "introspect_token",
-} as const;
-
-export type TAuthManagerOperation =
-  (typeof AuthManagerOperationDict)[keyof typeof AuthManagerOperationDict];
-
-/**
  * Storage type dictionary
  */
 export const AuthManagerStorageTypeDict = {
@@ -143,7 +125,7 @@ export type TAuthManagerStorageType =
 
 export interface AuthManagerErrorMetadata {
   code: TAuthManagerCode;
-  operation?: TAuthManagerOperation;
+  operation?: string;
   persistentTokenId?: string;
   userId?: string;
   storageType?: TAuthManagerStorageType;

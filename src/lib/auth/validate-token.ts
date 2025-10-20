@@ -1,10 +1,7 @@
 import { NextRequest } from "next/server";
 import { getKeycloakClient } from "./keycloak-client";
-import {
-  AuthManagerError,
-  AuthManagerErrorDict,
-  AuthManagerOperationDict,
-} from "./vault-errors";
+import { AuthManagerError, AuthManagerErrorDict } from "./vault-errors";
+import { logger, AuthLogEventDict } from "@/lib/logger";
 
 /**
  * Extracts the Bearer token from the `authorization` header of a Next.js request.
@@ -57,11 +54,10 @@ export async function validateAccessToken(accessToken: string): Promise<{
 
     if (!introspection.active) {
       throw new AuthManagerError(AuthManagerErrorDict.token_not_active.code, {
-        operation: AuthManagerOperationDict.introspect_token,
+        operation: "introspect_token",
       });
     }
 
-    // Get user info from the token
     const userInfo = await keycloakClient.info(accessToken);
 
     return {
@@ -73,12 +69,10 @@ export async function validateAccessToken(accessToken: string): Promise<{
     if (AuthManagerError.is(error)) {
       throw error;
     }
-
-    console.error("error validating access token:", error);
     throw new AuthManagerError(
       AuthManagerErrorDict.token_introspection_failed.code,
       {
-        operation: AuthManagerOperationDict.introspect_token,
+        operation: "introspect_token",
         originalError: error,
       }
     );
@@ -128,17 +122,23 @@ export async function validateRequest(
       ...userInfo,
       accessToken,
     };
-  } catch (error) {
-    if (AuthManagerError.is(error)) {
+  } catch (err) {
+    logger.vault(AuthLogEventDict.validationError, {
+      component: "RequestValidation",
+      operation: "validateRequest",
+      originalError: err,
+    });
+
+    if (AuthManagerError.is(err)) {
       return {
         valid: false,
-        error: error.msg(),
+        error: err.msg(),
       };
     }
 
     return {
       valid: false,
-      error: error instanceof Error ? error.message : "validation failed",
+      error: err instanceof Error ? err.message : "validation failed",
     };
   }
 }

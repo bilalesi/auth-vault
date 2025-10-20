@@ -1,7 +1,11 @@
 import { NextRequest } from "next/server";
 import { GetStorage } from "@/lib/auth/token-vault-factory";
 import { validateRequest } from "@/lib/auth/validate-token";
-import { throwError, makeResponse, makeVaultError } from "@/lib/auth/response";
+import {
+  throwError,
+  makeResponse,
+  makeAuthManagerError,
+} from "@/lib/auth/response";
 import {
   AuthManagerError,
   AuthManagerErrorDict,
@@ -25,7 +29,7 @@ export async function GET(request: NextRequest) {
     const validation = await validateRequest(request);
 
     if (!validation.valid) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.unauthorized.code)
       );
     }
@@ -34,7 +38,7 @@ export async function GET(request: NextRequest) {
     const entry = await vault.getUserRefreshToken(validation.userId);
 
     if (!entry) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.no_refresh_token.code, {
           userId: validation.userId,
         })

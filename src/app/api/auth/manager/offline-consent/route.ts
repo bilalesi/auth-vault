@@ -1,7 +1,11 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { validateRequest } from "@/lib/auth/validate-token";
-import { makeResponse, makeVaultError, throwError } from "@/lib/auth/response";
+import {
+  makeResponse,
+  makeAuthManagerError,
+  throwError,
+} from "@/lib/auth/response";
 import {
   AuthManagerError,
   AuthManagerErrorDict,
@@ -10,7 +14,6 @@ import { GetStorage } from "@/lib/auth/token-vault-factory";
 import { generateStateToken } from "@/lib/auth/state-token";
 import { getExpirationDate, TokenExpirationDict } from "@/lib/auth/date-utils";
 
-// Request schema
 const ConsentUrlRequestSchema = z.object({
   taskId: z.uuid().min(1, "Task ID is required"),
 });
@@ -36,7 +39,7 @@ export async function POST(request: NextRequest) {
     const validation = await validateRequest(request);
 
     if (!validation.valid) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.unauthorized.code)
       );
     }
@@ -73,7 +76,8 @@ export async function POST(request: NextRequest) {
       scope: "openid profile email offline_access",
       redirect_uri: `${process.env.NEXTAUTH_URL}/api/auth/manager/offline-callback`,
       state: stateToken,
-      prompt: "consent", // Force consent screen to appear every time
+      // force consent screen to appear every time
+      // prompt: "consent",
     });
 
     const consentUrl = `${

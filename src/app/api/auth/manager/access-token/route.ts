@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
+
 import { GetStorage } from "@/lib/auth/token-vault-factory";
 import { getKeycloakClient } from "@/lib/auth/keycloak-client";
 import { decryptToken } from "@/lib/auth/encryption";
@@ -9,7 +10,11 @@ import {
   AuthManagerErrorDict,
 } from "@/lib/auth/vault-errors";
 import { AuthManagerTokenTypeDict } from "@/lib/auth/token-vault-interface";
-import { makeResponse, makeVaultError, throwError } from "@/lib/auth/response";
+import {
+  makeResponse,
+  makeAuthManagerError,
+  throwError,
+} from "@/lib/auth/response";
 import {
   isExpired,
   TokenExpirationDict,
@@ -17,7 +22,7 @@ import {
 } from "@/lib/auth/date-utils";
 
 const AccessTokenRequestSchema = z.object({
-  persistentTokenId: z.uuid(),
+  persistent_token_id: z.uuid(),
 });
 
 /**
@@ -40,21 +45,23 @@ export async function GET(request: NextRequest) {
   try {
     const validation = await validateRequest(request);
     if (!validation.valid) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.unauthorized.code)
       );
     }
 
     const query = request.nextUrl.searchParams;
-    const { persistentTokenId } = AccessTokenRequestSchema.parse({
-      persistentTokenId: query.get("id"),
+    const result = await AccessTokenRequestSchema.parseAsync({
+      persistent_token_id: query.get("persistent_token_id"),
     });
+
+    const persistentTokenId = result.persistent_token_id;
 
     const vault = GetStorage();
     const entry = await vault.retrieve(persistentTokenId);
 
     if (!entry) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.token_not_found.code, {
           persistentTokenId,
         })
@@ -63,7 +70,7 @@ export async function GET(request: NextRequest) {
 
     if (isExpired(entry.expiresAt)) {
       await vault.delete(persistentTokenId);
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.token_expired.code, {
           persistentTokenId,
         })
@@ -71,7 +78,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (!entry.encryptedToken || !entry.iv) {
-      return makeVaultError(
+      return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.token_not_found.code, {
           persistentTokenId,
           reason: "Token is pending and not yet available",
@@ -79,7 +86,7 @@ export async function GET(request: NextRequest) {
         })
       );
     }
-    console.log("———entry", entry);
+
     const keycloakClient = getKeycloakClient();
     const token = decryptToken(entry.encryptedToken, entry.iv);
     const response = await keycloakClient.refreshAccessToken(token);
@@ -108,7 +115,6 @@ export async function GET(request: NextRequest) {
       expiresIn: response.expires_in,
     });
   } catch (error) {
-    console.log("–– – GET – error––", error);
     return throwError(error);
   }
 }

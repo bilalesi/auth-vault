@@ -242,7 +242,7 @@
     - Implement error response formatters
     - _Requirements: 9.5_
 
-  - [ ] 12.2 Add logging infrastructure
+  - [x] 12.2 Add logging infrastructure
 
     - Set up logging library (winston or pino)
     - Define AuthLogEvent interface

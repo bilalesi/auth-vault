@@ -127,6 +127,7 @@ import {
   createHash,
 } from "crypto";
 import { AuthManagerError, AuthManagerErrorDict } from "./vault-errors";
+import { AuthLogEventDict, logger } from "../logger";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16; // 16 bytes for AES
@@ -241,12 +242,18 @@ export function encryptToken(token: string, iv: string): string {
     encrypted += authTag.toString("hex");
 
     return encrypted;
-  } catch (error) {
-    if (AuthManagerError.is(error)) {
-      throw error;
+  } catch (err) {
+    logger.vault(AuthLogEventDict.encryption, {
+      component: "Encryption",
+      operation: "encryptToken",
+      originalError: err,
+    });
+
+    if (AuthManagerError.is(err)) {
+      throw err;
     }
     throw new AuthManagerError("encryption_failed", {
-      originalError: error,
+      originalError: err,
       operation: "encryptToken",
     });
   }
@@ -290,7 +297,7 @@ export function decryptToken(encryptedToken: string, iv: string): string {
 
     if (authTag.length !== AUTH_TAG_LENGTH) {
       throw new AuthManagerError(AuthManagerErrorDict.decryption_failed.code, {
-        reason: "Invalid auth tag length - data may be corrupted",
+        reason: "Invalid auth tag length, data may be corrupted",
         expectedLength: AUTH_TAG_LENGTH,
         actualLength: authTag.length,
         operation: "decryptToken",
@@ -304,12 +311,17 @@ export function decryptToken(encryptedToken: string, iv: string): string {
     decrypted += decipher.final("utf8");
 
     return decrypted;
-  } catch (error) {
-    if (AuthManagerError.is(error)) {
-      throw error;
+  } catch (err) {
+    logger.vault(AuthLogEventDict.decryption, {
+      component: "Decryption",
+      operation: "decryptToken",
+      originalError: err,
+    });
+    if (AuthManagerError.is(err)) {
+      throw err;
     }
     throw new AuthManagerError(AuthManagerErrorDict.decryption_failed.code, {
-      originalError: error,
+      originalError: err,
       operation: "decryptToken",
       hint: "Data may be corrupted, tampered with, or encrypted with a different key",
     });

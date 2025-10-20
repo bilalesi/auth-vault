@@ -1,3 +1,5 @@
+import { AuthLogEventDict, logger } from "../logger";
+
 export interface TStateTokenPayload {
   userId: string;
   taskId: string;
@@ -44,8 +46,12 @@ export function parseAckState(ackToken: string): TStateTokenPayload | null {
       taskId,
       persistentTokenId,
     };
-  } catch (error) {
-    console.error("Error parsing state token:", error);
+  } catch (err) {
+    logger.info(AuthLogEventDict.parsing, {
+      component: "KeycloakUrlState",
+      operation: "parseAckState",
+      originalError: err,
+    });
     return null;
   }
 }
