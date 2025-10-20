@@ -1,19 +1,52 @@
 import { Signale } from "signale";
 
 export const AuthLogEventDict = {
+  // Storage events
   storageInit: "storage.init",
+
+  // Token events
   tokenCreated: "token.created",
   tokenRefreshed: "token.refreshed",
   tokenRevoked: "token.revoked",
+  tokenExpired: "token.expired",
+  tokenValidated: "token.validated",
+  tokenValidationFailed: "token.validation_failed",
+
+  // Offline token events
+  offlineTokenRequested: "offline_token.requested",
+  offlineTokenGranted: "offline_token.granted",
   offlineTokenRevoked: "offline_token.revoked",
+  offlineTokenConsentRequired: "offline_token.consent_required",
+  offlineTokenConsentGranted: "offline_token.consent_granted",
+  offlineTokenConsentDenied: "offline_token.consent_denied",
+
+  // Keycloak events
+  keycloakRequest: "keycloak.request",
+  keycloakResponse: "keycloak.response",
   keycloakError: "keycloak.error",
+
+  // Vault events
   vaultStore: "vault.store",
+  vaultRetrieve: "vault.retrieve",
   vaultDelete: "vault.delete",
   vaultError: "vault.error",
-  validationError: "validation:error",
+
+  // API events
+  apiRequest: "api.request",
+  apiResponse: "api.response",
+  apiError: "api.error",
+
+  // Validation events
+  validationError: "validation.error",
+
+  // Encryption events
   encryption: "encryption",
   decryption: "decryption",
+
+  // Parsing events
   parsing: "parsing",
+
+  // General events
   error: "error",
   warning: "warning",
 } as const;

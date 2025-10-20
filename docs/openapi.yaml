@@ -1,0 +1,460 @@
+openapi: 3.0.3
+info:
+  title: Auth Manager API
+  description: |
+    Token management API for Keycloak authentication with support for refresh tokens and offline tokens.
+
+    ## Features
+    - Refresh token management for active sessions
+    - Offline token support for background tasks
+    - Secure token storage with AES-256-GCM encryption
+    - Token revocation and session management
+
+    ## Authentication
+    All endpoints require Bearer token authentication using a valid Keycloak access token.
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3000/api/auth/manager
+    description: Local development server
+  - url: https://api.example.com/api/auth/manager
+    description: Production server
+
+tags:
+  - name: Token Validation
+    description: Token validation endpoints
+  - name: Refresh Tokens
+    description: Refresh token management
+  - name: Offline Tokens
+    description: Offline token management for background tasks
+  - name: Access Tokens
+    description: Access token retrieval
+
+security:
+  - bearerAuth: []
+
+paths:
+  /validate-token:
+    get:
+      tags:
+        - Token Validation
+      summary: Validate access token
+      description: Validates the user's access token
+      operationId: validateToken
+      responses:
+        "200":
+          description: Token is valid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+
+  /refresh-token-id:
+    get:
+      tags:
+        - Refresh Tokens
+      summary: Get refresh token ID
+      description: Retrieves the user's refresh token ID and expiration time
+      operationId: getRefreshTokenId
+      responses:
+        "200":
+          description: Refresh token ID retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefreshTokenIdResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+
+  /offline-consent:
+    post:
+      tags:
+        - Offline Tokens
+      summary: Request offline token consent
+      description: Initiates the offline token consent flow by creating a pending token entry and returning the Keycloak consent URL
+      operationId: requestOfflineConsent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OfflineConsentRequest"
+      responses:
+        "200":
+          description: Consent URL generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OfflineConsentResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+
+  /offline-callback:
+    post:
+      tags:
+        - Offline Tokens
+      summary: Handle offline token callback
+      description: Handles the callback from Keycloak after user grants offline token consent
+      operationId: handleOfflineCallback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OfflineCallbackRequest"
+      responses:
+        "200":
+          description: Offline token stored successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OfflineCallbackResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+
+  /access-token:
+    get:
+      tags:
+        - Access Tokens
+      summary: Get access token
+      description: Exchanges a persistent token ID for a fresh access token. Works with both refresh tokens and offline tokens.
+      operationId: getAccessToken
+      parameters:
+        - name: persistent_token_id
+          in: query
+          required: true
+          description: UUID of the persistent token
+          schema:
+            type: string
+            format: uuid
+      security: []
+      responses:
+        "200":
+          description: Access token retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessTokenResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /offline-tokens:
+    get:
+      tags:
+        - Offline Tokens
+      summary: List offline tokens
+      description: Lists all offline tokens for the authenticated user
+      operationId: listOfflineTokens
+      responses:
+        "200":
+          description: Offline tokens retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OfflineTokensListResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+
+  /revoke-offline-token:
+    delete:
+      tags:
+        - Offline Tokens
+      summary: Revoke offline token
+      description: Revokes an offline token and optionally revokes the Keycloak session if it's the last token for that session
+      operationId: revokeOfflineToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevokeOfflineTokenRequest"
+      responses:
+        "200":
+          description: Offline token revoked successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevokeOfflineTokenResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Keycloak access token obtained from NextAuth.js session
+
+  schemas:
+    RefreshTokenIdResponse:
+      type: object
+      required:
+        - persistentTokenId
+        - expiresAt
+      properties:
+        persistentTokenId:
+          type: string
+          format: uuid
+          description: Persistent token ID that can be used to obtain access tokens
+          example: 550e8400-e29b-41d4-a716-446655440000
+        expiresAt:
+          type: string
+          format: date-time
+          description: Token expiration timestamp
+          example: "2024-12-31T23:59:59.000Z"
+
+    OfflineConsentRequest:
+      type: object
+      required:
+        - redirect_uri
+      properties:
+        redirect_uri:
+          type: string
+          format: uri
+          description: Callback URL for Keycloak to redirect after consent
+          example: http://localhost:3000/api/auth/manager/offline-callback
+
+    OfflineConsentResponse:
+      type: object
+      required:
+        - consentUrl
+        - persistentTokenId
+      properties:
+        consentUrl:
+          type: string
+          format: uri
+          description: URL to redirect user for offline access consent
+          example: http://localhost:8081/auth/realms/master/protocol/openid-connect/auth?client_id=nextjs-app&response_type=code&scope=openid%20offline_access&redirect_uri=http://localhost:3000/api/auth/manager/offline-callback&state=abc123
+        persistentTokenId:
+          type: string
+          format: uuid
+          description: Persistent token ID (pending until consent is granted)
+          example: 550e8400-e29b-41d4-a716-446655440000
+
+    OfflineCallbackRequest:
+      type: object
+      required:
+        - code
+        - state
+      properties:
+        code:
+          type: string
+          description: Authorization code from Keycloak
+          example: abc123def456
+        state:
+          type: string
+          description: State token from consent URL
+          example: xyz789ghi012
+
+    OfflineCallbackResponse:
+      type: object
+      required:
+        - success
+        - persistentTokenId
+        - expiresAt
+      properties:
+        success:
+          type: boolean
+          description: Whether the offline token was stored successfully
+          example: true
+        persistentTokenId:
+          type: string
+          format: uuid
+          description: Persistent token ID for the offline token
+          example: 550e8400-e29b-41d4-a716-446655440000
+        expiresAt:
+          type: string
+          format: date-time
+          description: Token expiration timestamp
+          example: "2024-12-31T23:59:59.000Z"
+
+    AccessTokenResponse:
+      type: object
+      required:
+        - accessToken
+        - expiresIn
+      properties:
+        accessToken:
+          type: string
+          description: JWT access token
+          example: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
+        expiresIn:
+          type: integer
+          description: Token lifetime in seconds
+          example: 3600
+
+    OfflineTokensListResponse:
+      type: object
+      required:
+        - tokens
+      properties:
+        tokens:
+          type: array
+          items:
+            $ref: "#/components/schemas/OfflineTokenInfo"
+
+    OfflineTokenInfo:
+      type: object
+      required:
+        - id
+        - createdAt
+        - expiresAt
+        - tokenType
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Persistent token ID
+          example: 550e8400-e29b-41d4-a716-446655440000
+        createdAt:
+          type: string
+          format: date-time
+          description: Token creation timestamp
+          example: "2024-01-01T00:00:00.000Z"
+        expiresAt:
+          type: string
+          format: date-time
+          description: Token expiration timestamp
+          example: "2024-12-31T23:59:59.000Z"
+        sessionState:
+          type: string
+          description: Keycloak session state
+          example: abc123-def456-ghi789
+        tokenType:
+          type: string
+          enum: [offline, refresh]
+          description: Type of token
+          example: offline
+
+    RevokeOfflineTokenRequest:
+      type: object
+      required:
+        - persistent_token_id
+      properties:
+        persistent_token_id:
+          type: string
+          format: uuid
+          description: Persistent token ID to revoke
+          example: 550e8400-e29b-41d4-a716-446655440000
+
+    RevokeOfflineTokenResponse:
+      type: object
+      required:
+        - success
+        - message
+        - sessionRevoked
+        - tokensWithSameSession
+      properties:
+        success:
+          type: boolean
+          description: Whether the revocation was successful
+          example: true
+        message:
+          type: string
+          description: Human-readable message
+          example: Offline token deleted and session revoked successfully
+        sessionRevoked:
+          type: boolean
+          description: Whether the Keycloak session was revoked
+          example: true
+        tokensWithSameSession:
+          type: integer
+          description: Number of other tokens with the same session state
+          example: 0
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              description: Error code
+              example: unauthorized
+            message:
+              type: string
+              description: Human-readable error message
+              example: Invalid or missing access token
+            details:
+              type: object
+              description: Additional error details
+              additionalProperties: true
+
+  responses:
+    UnauthorizedError:
+      description: Unauthorized - Invalid or missing access token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: unauthorized
+              message: Invalid or missing access token
+
+    NotFoundError:
+      description: Not Found - Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: token_not_found
+              message: Token not found
+
+    BadRequestError:
+      description: Bad Request - Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: validation_error
+              message: Invalid request parameters
+
+    InternalServerError:
+      description: Internal Server Error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: keycloak_error
+              message: Error communicating with Keycloak

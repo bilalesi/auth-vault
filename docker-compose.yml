@@ -14,7 +14,7 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.4
     platform: linux/amd64
-    command: start --spi-theme-static-max-age=-1 --spi-theme-cache-themes=false --spi-theme-cache-templates=false -Dkeycloak.profile.feature.admin_fine_grained_authz=enabled
+    command: start --spi-theme-static-max-age=-1 --spi-theme-cache-themes=false --spi-theme-cache-templates=false -Dkeycloak.profile.feature.admin_fine_grained_authz=enabled --import-realm
     #command: start --spi-theme-static-max-age=-1 --spi-theme-cache-themes=false --spi-theme-cache-templates=false
     environment:
       KC_HTTP_ENABLED: true
@@ -38,7 +38,8 @@ services:
       JAVA_OPTS_APPEND: "-Xms512m -Xmx2g"
       PROXY_ADDRESS_FORWARDING: true
       KC_HTTP_RELATIVE_PATH: "/auth"
-
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     ports:
       - 8081:8081
       - 9000:9000
@@ -60,6 +61,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./data:/data
+
   redis:
     image: "redis:7.2.3"
     command: redis-server /usr/local/etc/redis/redis.conf
@@ -71,12 +73,6 @@ services:
       retries: 5
       start_period: 5s
       timeout: 10s
-
-  adminer:
-    image: adminer
-    restart: always
-    ports:
-      - 8080:8080
 
 volumes:
   pgdata: {}

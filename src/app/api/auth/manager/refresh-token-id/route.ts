@@ -1,5 +1,4 @@
 import { NextRequest } from "next/server";
-import { GetStorage } from "@/lib/auth/token-vault-factory";
 import { validateRequest } from "@/lib/auth/validate-token";
 import {
   throwError,
@@ -10,19 +9,12 @@ import {
   AuthManagerError,
   AuthManagerErrorDict,
 } from "@/lib/auth/vault-errors";
+import { getRefreshTokenId } from "@/lib/services/refresh-token-id.service";
 
 /**
- * Handles the GET request for refreshing the token ID.
+ * GET /api/auth/manager/refresh-token-id
  *
- * This function validates the incoming request, retrieves the user's refresh token
- * from the storage, and returns the token details if valid. If the request is invalid
- * or the refresh token is not found, it returns an appropriate error response.
- *
- * @param request - The incoming HTTP request of type `NextRequest`.
- * @returns A response containing the persistent token ID and its expiration time,
- *          or an error response in case of validation failure or missing token.
- *
- * @throws Will throw an error if an unexpected issue occurs during processing.
+ * Retrieves the user's refresh token ID and expiration time.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -34,21 +26,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const vault = GetStorage();
-    const entry = await vault.getUserRefreshToken(validation.userId);
-
-    if (!entry) {
-      return makeAuthManagerError(
-        new AuthManagerError(AuthManagerErrorDict.no_refresh_token.code, {
-          userId: validation.userId,
-        })
-      );
-    }
-
-    return makeResponse({
-      persistentTokenId: entry.id,
-      expiresAt: entry.expiresAt.toISOString(),
-    });
+    const result = await getRefreshTokenId({ userId: validation.userId });
+    return makeResponse(result);
   } catch (error) {
     return throwError(error);
   }

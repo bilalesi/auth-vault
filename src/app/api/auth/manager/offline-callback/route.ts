@@ -1,44 +1,26 @@
 import { NextRequest } from "next/server";
-import { getKeycloakClient } from "@/lib/auth/keycloak-client";
-import { GetStorage } from "@/lib/auth/token-vault-factory";
 import { makeAuthManagerError, throwError } from "@/lib/auth/response";
 import {
   AuthManagerError,
   AuthManagerErrorDict,
 } from "@/lib/auth/vault-errors";
-import { parseAckState } from "@/lib/auth/state-token";
-import { OfflineTokenStatusDict } from "@/lib/auth/token-vault-interface";
-import {
-  KeycloakContentType,
-  TokenResponseSchema,
-} from "@/lib/auth/keycloak-schemas";
-import { logger } from "@/lib/logger";
+import { handleOfflineCallback } from "@/lib/services/offline-callback.service";
 
 /**
- * Handles the GET request for the offline callback endpoint.
- * This endpoint is responsible for processing the authorization code
- * and exchanging it for an offline token from Keycloak. The offline token
- * is then stored in the vault for future use.
+ * GET /api/auth/manager/offline-callback
  *
- * @param request - The incoming HTTP request object of type `NextRequest`.
+ * OAuth callback endpoint that handles the authorization code from Keycloak
+ * after the user grants offline_access consent.
  *
- * @returns A response indicating the result of the operation. This could be:
- * - A success response with the session state if the offline token is successfully stored.
- * - An error response if any step in the process fails.
+ * Query Parameters:
+ * - code: Authorization code from Keycloak
+ * - state: State token to track the consent flow
+ * - error: (optional) Error code if consent was denied
+ * - error_description: (optional) Error description
  *
- * The function performs the following steps:
- * 1. Extracts query parameters (`code`, `state`, `error`, `error_description`) from the request.
- * 2. Handles errors returned by Keycloak during the consent flow.
- * 3. Validates the presence of the `code` and `state` parameters.
- * 4. Parses and validates the state token.
- * 5. Retrieves the pending offline token request from the vault using the state token.
- * 6. Exchanges the authorization code for an offline token with Keycloak.
- * 7. Validates the token response and ensures a refresh token is present.
- * 8. Updates the vault with the new offline token and its status.
- * 9. Optionally updates a task in the in-memory task database with the token status.
- * 10. Handles errors gracefully, ensuring the vault and task database are updated appropriately.
- *
- * @throws {AuthManagerError} If any validation or processing step fails.
+ * Returns:
+ * - Redirects to /tasks page with success parameters
+ * - Or returns error response if something fails
  */
 export async function GET(request: NextRequest) {
   try {
@@ -48,6 +30,7 @@ export async function GET(request: NextRequest) {
     const error = searchParams.get("error");
     const errorDescription = searchParams.get("error_description");
 
+    // Handle Keycloak errors (user denied consent, etc.)
     if (error) {
       return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
@@ -57,6 +40,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Validate required parameters
     if (!code || !ackState) {
       return makeAuthManagerError(
         new AuthManagerError(AuthManagerErrorDict.invalid_request.code, {
@@ -65,144 +49,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const statePayload = parseAckState(ackState);
-    if (!statePayload) {
-      return makeAuthManagerError(
-        new AuthManagerError(AuthManagerErrorDict.invalid_request.code, {
-          reason: "Invalid state token",
-        })
-      );
-    }
+    // Call service to handle the callback
+    const result = await handleOfflineCallback({
+      code,
+      ackState,
+    });
 
-    const vault = GetStorage();
-    const entry = await vault.retrieveByAckState(ackState);
-
-    if (!entry) {
-      return makeAuthManagerError(
-        new AuthManagerError(AuthManagerErrorDict.token_not_found.code, {
-          reason: "Pending offline token request not found",
-          stateToken: ackState,
-        })
-      );
-    }
-
-    if (entry.id !== statePayload.persistentTokenId) {
-      return makeAuthManagerError(
-        new AuthManagerError(AuthManagerErrorDict.invalid_request.code, {
-          reason: "State token mismatch",
-        })
-      );
-    }
-
-    try {
-      const keycloakClient = getKeycloakClient();
-      const response = await fetch(keycloakClient.conf.tokenEndpoint, {
-        method: "post",
-        headers: {
-          "Content-Type": KeycloakContentType,
-        },
-        body: new URLSearchParams({
-          code,
-          client_id: process.env.KEYCLOAK_CLIENT_ID!,
-          client_secret: process.env.KEYCLOAK_CLIENT_SECRET!,
-          grant_type: "authorization_code",
-          redirect_uri: `${process.env.NEXTAUTH_URL}/api/auth/manager/offline-callback`,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(
-          `Token exchange failed: ${
-            errorData.error_description || errorData.error
-          }`
-        );
-      }
-
-      const result = await response.json();
-      const {
-        data: tokenSchemed,
-        success,
-        error: tokenSchemedError,
-      } = await TokenResponseSchema.safeParseAsync(result);
-
-      if (!success || !tokenSchemed) {
-        throw tokenSchemedError;
-      }
-      if (!tokenSchemed.refresh_token) {
-        throw new Error("No refresh token received from Keycloak");
-      }
-      logger.info("offline refresh token  is ready", tokenSchemed);
-      const offline = await vault.updateOfflineTokenByState(
-        ackState,
-        tokenSchemed.refresh_token,
-        OfflineTokenStatusDict.Active,
-        tokenSchemed.session_state
-      );
-      logger.api("offline token entry is ready", offline);
-      // TODO: delete this extra tasks tests
-      try {
-        const { getTaskDB } = await import("@/lib/task-manager/in-memory-db");
-        const taskDB = getTaskDB();
-        const task = taskDB.get(statePayload.taskId);
-
-        if (task) {
-          taskDB.update(statePayload.taskId, {
-            offlineTokenStatus: "active",
-          });
-          console.log("Task updated with active token status");
-        }
-      } catch (error) {
-        console.error("Error updating task:", error);
-        // Don't fail the whole request if task update fails
-      }
-
-      // return makeResponse({
-      //   session_state: tokenSchemed.session_state,
-      // });
-      const persistTaskUrl = `${process.env.NEXTAUTH_URL}/api/tasks/${statePayload.taskId}/link-persistent-id`;
-      const persistResponse = await fetch(persistTaskUrl, {
-        method: "post",
-        headers: {
-          "Content-Type": "application/json",
-          accept: "application/json",
-        },
-        body: JSON.stringify({ persistentTokenId: entry.id }),
-      });
-
-      if (!persistResponse.ok) {
-        throw new Error(
-          `Failed to get access token: ${persistResponse.statusText}`
-        );
-      }
-
-      return Response.redirect(
-        `${process.env.NEXTAUTH_URL}/tasks?success=true&taskId=${statePayload.taskId}&persistentTokenId=${entry.id}`
-      );
-    } catch (error: any) {
-      await vault.updateOfflineTokenByState(
-        ackState,
-        null,
-        OfflineTokenStatusDict.Failed
-      );
-      // TODO: delete this task integration for tests
-      try {
-        const { getTaskDB } = await import("@/lib/task-manager/in-memory-db");
-        const taskDB = getTaskDB();
-        taskDB.update(statePayload.taskId, {
-          offlineTokenStatus: "failed",
-        });
-      } catch (error) {
-        console.error("Error updating task:", error);
-      }
-
-      return makeAuthManagerError(
-        new AuthManagerError(AuthManagerErrorDict.keycloak_error.code, {
-          reason: "Failed to exchange authorization code for offline token",
-          originalError: error,
-        })
-      );
-    }
+    // Redirect to tasks page with success parameters
+    return Response.redirect(
+      `${process.env.NEXTAUTH_URL}/tasks?success=true&taskId=${result.taskId}&persistentTokenId=${result.persistentTokenId}`
+    );
   } catch (error) {
     return throwError(error);
   }

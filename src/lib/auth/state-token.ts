@@ -14,7 +14,7 @@ export interface TStateTokenPayload {
  * @param payload - State token payload
  * @returns Base64 encoded state token
  */
-export function generateStateToken(payload: TStateTokenPayload): string {
+export function makeStateToken(payload: TStateTokenPayload): string {
   const stateString = `${payload.userId}:${payload.taskId}:${payload.persistentTokenId}`;
   return Buffer.from(stateString, "utf-8").toString("base64url");
 }

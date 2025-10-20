@@ -11,14 +11,9 @@ import {
 } from "@/lib/auth/response";
 
 /**
- * Handles the GET request for validating a token.
+ * GET /api/auth/manager/validate-token
  *
- * @param request - The incoming HTTP request of type `NextRequest`.
- * @returns A promise that resolves to an HTTP response. If the token validation
- *          fails, it returns an error response with an unauthorized status.
- *          Otherwise, it returns a successful response.
- *
- * @throws Will throw an error if an unexpected issue occurs during processing.
+ * Validates the user's access token.
  */
 export async function GET(request: NextRequest) {
   try {
