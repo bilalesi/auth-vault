@@ -39,6 +39,7 @@ export interface TokenIntrospection {
   exp?: number;
   iat?: number;
   sub?: string;
+  sid?: string;
   scope?: string;
   client_id?: string;
   username?: string;

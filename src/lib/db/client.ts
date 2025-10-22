@@ -1,6 +1,10 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { AuthVault } from "./schema";
+import dotenv from "dotenv";
+import path from "path";
+
+dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
 
 const connectionString = process.env.DATABASE_URL;
 

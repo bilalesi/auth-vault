@@ -25,6 +25,7 @@ import { handleOfflineCallback } from "@/lib/services/offline-callback.service";
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
+    console.log("–– – GET – searchParams––", searchParams);
     const code = searchParams.get("code");
     const ackState = searchParams.get("state");
     const error = searchParams.get("error");
@@ -56,9 +57,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Redirect to tasks page with success parameters
-    return Response.redirect(
-      `${process.env.NEXTAUTH_URL}/tasks?success=true&taskId=${result.taskId}&persistentTokenId=${result.persistentTokenId}`
-    );
+    return Response.redirect(`${process.env.NEXTAUTH_URL}/tasks?success=true`);
   } catch (error) {
     return throwError(error);
   }

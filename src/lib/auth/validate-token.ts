@@ -47,6 +47,7 @@ export async function validateAccessToken(accessToken: string): Promise<{
   userId: string;
   email?: string;
   username?: string;
+  sessionStateId?: string;
 }> {
   try {
     const keycloakClient = getKeycloakClient();
@@ -64,6 +65,7 @@ export async function validateAccessToken(accessToken: string): Promise<{
       userId: userInfo.sub,
       email: userInfo.email,
       username: userInfo.preferred_username,
+      sessionStateId: introspection.sid,
     };
   } catch (error) {
     if (AuthManagerError.is(error)) {
@@ -86,6 +88,7 @@ type TValidation =
       email?: string;
       username?: string;
       accessToken: string;
+      sessionId?: string;
     }
   | {
       valid: false;
@@ -121,6 +124,7 @@ export async function validateRequest(
       valid: true,
       ...userInfo,
       accessToken,
+      sessionId: userInfo.sessionStateId,
     };
   } catch (err) {
     logger.vault(AuthLogEventDict.validationError, {

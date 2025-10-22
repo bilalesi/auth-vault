@@ -70,7 +70,6 @@ export async function createOfflineConsent(
 
   const stateToken = makeStateToken({
     userId,
-    taskId,
     persistentTokenId,
   });
 

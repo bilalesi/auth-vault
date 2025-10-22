@@ -135,28 +135,7 @@ export default function TasksPage() {
 
       const data = await response.json();
 
-      if (data.status === "needs_consent") {
-        setMessage({
-          type: "info",
-          text: "Task needs offline token. Click 'Request Token' first.",
-        });
-      } else if (data.status === "waiting_consent") {
-        setMessage({
-          type: "info",
-          text: "Waiting for you to grant consent. Please complete the consent flow.",
-        });
-      } else if (data.status === "executing") {
-        setMessage({
-          type: "success",
-          text: "Task is now executing! Watch the progress below.",
-        });
-        fetchTasks();
-      } else if (data.status === "token_failed") {
-        setMessage({
-          type: "error",
-          text: "Token request failed. Please try requesting token again.",
-        });
-      }
+      return data;
     } catch (error) {
       console.log("–– – executeTask – error––", error);
       setMessage({ type: "error", text: "Failed to execute task" });
@@ -329,29 +308,20 @@ export default function TasksPage() {
                             )}
                           </div>
                           <div className="flex gap-3">
-                            {!task.persistentTokenId &&
-                              task.status === "pending" && (
-                                <button
-                                  onClick={() => requestOfflineToken(task.id)}
-                                  disabled={loading}
-                                  className="flex-1 bg-teal-500 text-white py-2 px-4 max-w-max rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-                                >
-                                  Request Offline Token
-                                </button>
-                              )}
-
-                            {task.persistentTokenId &&
-                              task.status === "pending" &&
-                              task.offlineTokenStatus === "active" && (
-                                <button
-                                  onClick={() => executeTask(task.id)}
-                                  disabled={loading}
-                                  className="flex-1 bg-teal-800 max-w-max text-white py-2 px-4 rounded-lg hover:bg-teal-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-                                >
-                                  Execute Task
-                                </button>
-                              )}
-
+                            <button
+                              onClick={() => requestOfflineToken(task.id)}
+                              disabled={loading}
+                              className="flex-1 bg-teal-500 text-white py-2 px-4 max-w-max rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                            >
+                              Request Offline Token
+                            </button>
+                            <button
+                              onClick={() => executeTask(task.id)}
+                              disabled={loading}
+                              className="flex-1 bg-teal-800 max-w-max text-white py-2 px-4 rounded-lg hover:bg-teal-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                            >
+                              Execute Task
+                            </button>
                             {task.offlineTokenStatus === "pending" && (
                               <div className="flex-1 bg-yellow-50 border border-yellow-200 text-yellow-800 py-2 px-4 rounded-lg text-center">
                                 Waiting for consent...
@@ -369,7 +339,6 @@ export default function TasksPage() {
                       </button>
                     </div>
 
-                    {/* Progress Bar */}
                     {task.status === "running" &&
                       task.progress !== undefined && (
                         <div className="mb-4">

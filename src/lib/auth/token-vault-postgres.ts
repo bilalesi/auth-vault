@@ -428,48 +428,40 @@ export class AuthManagerPgStorage implements IStorage {
     }
   }
 
-  async retrieveUserOfflineTokens(
-    userId: string
-  ): Promise<AuthManagerVaultEntry[]> {
+  async retrieveUserPersistentIdBySession(
+    sessionStateId: string
+  ): Promise<{ sessionId: string; id: string } | null> {
     try {
-      const rows = await this.db.query.AuthVault.findMany({
+      const row = await this.db.query.AuthVault.findFirst({
         where: (f, op) => {
           return op.and(
-            op.eq(f.userId, userId),
+            op.eq(f.sessionState, sessionStateId),
             op.eq(f.tokenType, AuthManagerTokenTypeDict.Offline)
           );
         },
         orderBy: (f, op) => [op.desc(f.createdAt)],
       });
 
-      return rows.map((row) => ({
-        id: row.id,
-        userId: row.userId,
-        tokenType: row.tokenType as TAuthManagerTokenType,
-        encryptedToken: row.encryptedToken,
-        iv: row.iv,
-        createdAt: row.createdAt,
-        expiresAt: row.expiresAt,
-        metadata: (row.metadata as Record<string, any>) || undefined,
-        status: row.status as OfflineTokenStatus | undefined,
-        taskId: row.taskId || undefined,
-        ackState: row.ackState || undefined,
-        sessionState: row.sessionState || undefined,
-      }));
+      if (!row) return null;
+
+      return {
+        sessionId: row?.sessionState ?? sessionStateId,
+        id: row?.id,
+      };
     } catch (err) {
       logger.storage(
         AuthLogEventDict.vaultError,
         {
           component: "AuthManagerPgVault",
-          operation: "retrieveUserOfflineTokens",
-          userId,
+          operation: "retrieveUserPersistentIdBySession",
+          sessionStateId,
           storageType: AuthManagerStorageTypeDict.postgres,
         },
         err
       );
       throw new AuthManagerError(AuthManagerErrorDict.storage_error.code, {
-        operation: "retrieveUserOfflineTokens",
-        userId,
+        operation: "retrieveUserPersistentIdBySession",
+        sessionStateId,
         storageType: AuthManagerStorageTypeDict.postgres,
         originalError: err,
       });

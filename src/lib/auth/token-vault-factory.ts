@@ -1,6 +1,5 @@
 import type { IStorage } from "./token-vault-interface";
 import { AuthManagerPgStorage } from "./token-vault-postgres";
-import { AuthManagerRedisStorage } from "./token-vault-redis";
 import { match } from "ts-pattern";
 import { AuthManagerError, AuthManagerErrorDict } from "./vault-errors";
 import { AuthLogEventDict, logger } from "../logger";
@@ -49,17 +48,6 @@ export function GetStorage(): IStorage {
         "Using Postgres storage"
       );
       return new AuthManagerPgStorage();
-    })
-    .with({ storageType: StorageTypeDict.redis }, () => {
-      logger.storage(
-        AuthLogEventDict.storageInit,
-        {
-          component: "Storage",
-          operation: "GetStorage",
-        },
-        "Using Redis storage"
-      );
-      return new AuthManagerRedisStorage();
     })
     .otherwise(() => {
       throw new AuthManagerError(AuthManagerErrorDict.connection_error.code, {

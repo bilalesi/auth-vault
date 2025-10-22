@@ -154,7 +154,9 @@ export interface IStorage {
    * @param userId - User ID
    * @returns Array of offline token vault entries
    */
-  retrieveUserOfflineTokens(userId: string): Promise<AuthManagerVaultEntry[]>;
+  retrieveUserPersistentIdBySession(
+    sessionStateId: string
+  ): Promise<{ sessionId: string; id: string } | null>;
 
   /**
    * Check if a token hash exists in the vault (excluding a specific token ID)

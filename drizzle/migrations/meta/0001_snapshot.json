@@ -1,6 +1,6 @@
 {
-  "id": "dae3b127-245f-4e99-8c97-380e23128228",
-  "prevId": "bef6e1f1-18e5-4330-ac9e-234783c8d05d",
+  "id": "904c827b-aca4-462a-86d8-7da1c58585b6",
+  "prevId": "f9286d8f-f45c-4c46-ac4b-3449ce57d926",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -13,7 +13,7 @@
           "type": "uuid",
           "primaryKey": true,
           "notNull": true,
-          "default": "'bfc40deb-e532-4360-a7f4-3c319ca86a48'"
+          "default": "'101cabd7-c2d3-4380-8708-b271a8c9cec2'"
         },
         "user_id": {
           "name": "user_id",
@@ -36,6 +36,12 @@
         },
         "iv": {
           "name": "iv",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token_hash": {
+          "name": "token_hash",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -157,6 +163,21 @@
           "columns": [
             {
               "expression": "session_state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "auth_vault_token_hash_idx": {
+          "name": "auth_vault_token_hash_idx",
+          "columns": [
+            {
+              "expression": "token_hash",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

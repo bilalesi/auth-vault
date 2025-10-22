@@ -1,0 +1,1 @@
+ALTER TABLE "auth_vault" ALTER COLUMN "id" SET DEFAULT '101cabd7-c2d3-4380-8708-b271a8c9cec2';

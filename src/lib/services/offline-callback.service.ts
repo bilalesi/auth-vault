@@ -21,7 +21,6 @@ export interface HandleOfflineCallbackParams {
 
 export interface HandleOfflineCallbackResult {
   persistentTokenId: string;
-  taskId: string;
   sessionState: string;
   userId: string;
 }
@@ -52,6 +51,7 @@ export async function handleOfflineCallback(
   params: HandleOfflineCallbackParams
 ): Promise<HandleOfflineCallbackResult> {
   const { code, ackState } = params;
+  console.log("–– – handleOfflineCallback – code, ackState––", code, ackState);
 
   logger.keycloak(
     `[${AuthLogEventDict.offlineTokenGranted}] Processing callback`,
@@ -62,6 +62,7 @@ export async function handleOfflineCallback(
   );
 
   const statePayload = parseAckState(ackState);
+  console.log("–– – handleOfflineCallback – statePayload––", statePayload);
   if (!statePayload) {
     throw new AuthManagerError(AuthManagerErrorDict.invalid_request.code, {
       reason: "Invalid state token",
@@ -131,53 +132,8 @@ export async function handleOfflineCallback(
       tokenSchemed.session_state
     );
 
-    const persistTaskUrl = `${process.env.NEXTAUTH_URL}/api/tasks/${statePayload.taskId}/link-persistent-id`;
-    logger.vault(`[${AuthLogEventDict.offlineTokenGranted}] Token stored`, {
-      component: "OfflineCallbackService",
-      operation: "handleOfflineCallback",
-      persistentTokenId: entry.id,
-      userId: entry.userId,
-      sessionState: tokenSchemed.session_state,
-    });
-
-    // // TODO: to be  removed
-    // try {
-    //   const { getTaskDB } = await import("@/lib/task-manager/in-memory-db");
-    //   const taskDB = getTaskDB();
-    //   const task = taskDB.get(statePayload.taskId);
-
-    //   if (task) {
-    //     taskDB.update(statePayload.taskId, {
-    //       offlineTokenStatus: "active",
-    //     });
-    //   }
-    // } catch (error) {
-    //   logger.error(`[${AuthLogEventDict.error}] Failed to update task`, {
-    //     component: "OfflineCallbackService",
-    //     operation: "updateTask",
-    //     taskId: statePayload.taskId,
-    //     error: error instanceof Error ? error.message : String(error),
-    //   });
-    //   // Don't fail the whole request if task update fails
-    // }
-    // const presponse = await fetch(persistTaskUrl, {
-    //   method: "POST",
-    //   headers: {
-    //     "Content-Type": "application/json",
-    //     accept: "application/json",
-    //   },
-    //   body: JSON.stringify({ persistentTokenId: entry.id }),
-    // });
-
-    // if (!presponse.ok) {
-    //   throw new Error(
-    //     `Failed to link persistent token: ${response.statusText}`
-    //   );
-    // }
-
     return {
       persistentTokenId: entry.id,
-      taskId: statePayload.taskId,
       sessionState: tokenSchemed.session_state!,
       userId: entry.userId || statePayload.userId,
     };
@@ -187,14 +143,6 @@ export async function handleOfflineCallback(
       null,
       OfflineTokenStatusDict.Failed
     );
-    // TODO: to be removed
-    // try {
-    //   const { getTaskDB } = await import("@/lib/task-manager/in-memory-db");
-    //   const taskDB = getTaskDB();
-    //   taskDB.update(statePayload.taskId, {
-    //     offlineTokenStatus: "failed",
-    //   });
-    // } catch (err) {}
 
     logger.error(`[${AuthLogEventDict.keycloakError}] Token exchange failed`, {
       component: "OfflineCallbackService",

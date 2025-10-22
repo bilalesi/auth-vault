@@ -2,7 +2,6 @@ import { AuthLogEventDict, logger } from "../logger";
 
 export interface TStateTokenPayload {
   userId: string;
-  taskId: string;
   persistentTokenId: string;
 }
 
@@ -15,7 +14,7 @@ export interface TStateTokenPayload {
  * @returns Base64 encoded state token
  */
 export function makeStateToken(payload: TStateTokenPayload): string {
-  const stateString = `${payload.userId}:${payload.taskId}:${payload.persistentTokenId}`;
+  const stateString = `${payload.userId}:${payload.persistentTokenId}`;
   return Buffer.from(stateString, "utf-8").toString("base64url");
 }
 
@@ -31,19 +30,18 @@ export function parseAckState(ackToken: string): TStateTokenPayload | null {
     const decoded = Buffer.from(ackToken, "base64url").toString("utf-8");
     const parts = decoded.split(":");
 
-    if (parts.length !== 3) {
+    if (parts.length !== 2) {
       return null;
     }
 
-    const [userId, taskId, persistentTokenId] = parts;
+    const [userId, persistentTokenId] = parts;
 
-    if (!userId || !taskId || !persistentTokenId) {
+    if (!userId || !persistentTokenId) {
       return null;
     }
 
     return {
       userId,
-      taskId,
       persistentTokenId,
     };
   } catch (err) {

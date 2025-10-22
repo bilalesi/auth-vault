@@ -171,6 +171,8 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async jwt({ token, account, user, profile, trigger, session }) {
+      console.log("–– – token––", token);
+      console.log("–– – account––", account);
       if (account && user) {
         token.accessToken = account.access_token;
         token.accessTokenExpires = account.expires_at
