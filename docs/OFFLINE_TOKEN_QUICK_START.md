@@ -109,8 +109,11 @@ async function useOfflineToken() {
 ### Backend/CLI Implementation
 
 ```typescript
-import { GetStorage } from "@/lib/auth/token-vault-factory";
-import { generateStateToken, parseStateToken } from "@/lib/auth/state-token";
+import { GetStorage } from "@/services/auth-manager/auth/token-vault-factory";
+import {
+  generateStateToken,
+  parseStateToken,
+} from "@/services/auth-manager/auth/state-token";
 
 // Create pending token request
 async function createOfflineTokenRequest(userId: string, taskId: string) {

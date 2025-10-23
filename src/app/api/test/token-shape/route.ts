@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { StatusCodes } from "http-status-codes";
 import { auth } from "@/auth";
-import { getKeycloakClient } from "@/lib/auth/keycloak-client";
+import { getKeycloakClient } from "@/services/auth-manager/auth/keycloak-client";
 
 export async function GET() {
   try {

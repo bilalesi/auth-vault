@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { StatusCodes } from "http-status-codes";
-import { validateRequest } from "@/lib/auth/validate-token";
+import { validateRequest } from "@/services/auth-manager/auth/validate-token";
 import { getTaskDB } from "@/lib/task-manager/in-memory-db";
 
 const CreateTaskSchema = z.object({

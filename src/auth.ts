@@ -47,7 +47,10 @@ import {
   NextApiRequest,
   NextApiResponse,
 } from "next";
-import { getExpirationDate, TokenExpirationDict } from "@/lib/auth/date-utils";
+import {
+  getExpirationDate,
+  TokenExpirationDict,
+} from "@/services/auth-manager/auth/date-utils";
 import ms from "ms";
 
 const issuer = process.env.KEYCLOAK_ISSUER!;
@@ -91,21 +94,22 @@ export async function refreshAccessToken(token: TokenSet): Promise<TokenSet> {
 
     if (token.user?.id) {
       try {
-        const { GetStorage } = await import("@/lib/auth/token-vault-factory");
+        const { GetStorage } = await import(
+          "@/services/auth-manager/auth/token-vault-factory"
+        );
         const store = GetStorage();
         const expiresAt = getExpirationDate(TokenExpirationDict.Refresh);
 
-        const persistentTokenId = await store.upsertRefreshToken(
-          token.user.id,
-          newRefreshToken,
-          expiresAt,
-          refreshedTokens.session_state,
-          {
+        const persistentTokenId = await store.upsertRefreshToken({
+          sessionStateId: refreshedTokens.session_state,
+          userId: token.user.id,
+          token: newRefreshToken,
+          metadata: {
             name: token.user.name,
             lastRefresh: new Date().toISOString(),
             refreshCount: ((token as any).refreshCount || 0) + 1,
-          }
-        );
+          },
+        });
 
         token.persistentTokenId = persistentTokenId;
         (token as any).refreshCount = ((token as any).refreshCount || 0) + 1;
@@ -189,22 +193,19 @@ export const authOptions: NextAuthOptions = {
         if (account.refresh_token && profile?.sub) {
           try {
             const { GetStorage } = await import(
-              "@/lib/auth/token-vault-factory"
+              "@/services/auth-manager/auth/token-vault-factory"
             );
             const store = GetStorage();
-            const expiresAt = getExpirationDate(TokenExpirationDict.Refresh);
-
-            const persistentTokenId = await store.upsertRefreshToken(
-              profile.sub,
-              account.refresh_token,
-              expiresAt,
-              account.session_state,
-              {
-                name: user.name,
-                provider: account.provider,
-                loginTime: new Date().toISOString(),
-              }
-            );
+            const persistentTokenId = await store.upsertRefreshToken({
+              sessionStateId: account.session_state!,
+              userId: profile.sub,
+              token: account.refresh_token,
+              metadata: {
+                name: token.user.name,
+                lastRefresh: new Date().toISOString(),
+                refreshCount: ((token as any).refreshCount || 0) + 1,
+              },
+            });
 
             token.persistentTokenId = persistentTokenId;
             console.info("[vault.store]", {

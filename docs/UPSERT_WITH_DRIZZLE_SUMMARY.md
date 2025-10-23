@@ -116,7 +116,9 @@ COALESCE(auth_vault.metadata, '{}'::jsonb)
 ```typescript
 // Store refresh token in Token Vault for external services
 if (account.refresh_token && profile?.sub) {
-  const { GetStorage } = await import("@/lib/auth/token-vault-factory");
+  const { GetStorage } = await import(
+    "@/services/auth-manager/auth/token-vault-factory"
+  );
   const store = GetStorage();
   const expiresAt = getExpirationDate(TokenExpirationDict.refresh);
 
@@ -142,7 +144,9 @@ if (account.refresh_token && profile?.sub) {
 ```typescript
 // Always update refresh token in vault (upsert handles create/update)
 if (token.user?.id) {
-  const { GetStorage } = await import("@/lib/auth/token-vault-factory");
+  const { GetStorage } = await import(
+    "@/services/auth-manager/auth/token-vault-factory"
+  );
   const store = GetStorage();
   const expiresAt = getExpirationDate(TokenExpirationDict.refresh);
 

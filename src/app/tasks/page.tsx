@@ -92,7 +92,7 @@ export default function TasksPage() {
     setMessage(null);
 
     try {
-      const response = await fetch("/api/auth/manager/offline-consent", {
+      const response = await fetch("/api/auth/manager/offline-token", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

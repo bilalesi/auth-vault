@@ -1,6 +1,6 @@
 {
-  "id": "904c827b-aca4-462a-86d8-7da1c58585b6",
-  "prevId": "f9286d8f-f45c-4c46-ac4b-3449ce57d926",
+  "id": "910a3bdc-ab38-4e9a-93ce-027a65e54d1c",
+  "prevId": "1c55fecf-1547-47a3-b56f-59d70411e120",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -13,7 +13,7 @@
           "type": "uuid",
           "primaryKey": true,
           "notNull": true,
-          "default": "'101cabd7-c2d3-4380-8708-b271a8c9cec2'"
+          "default": "gen_random_uuid()"
         },
         "user_id": {
           "name": "user_id",
@@ -46,49 +46,24 @@
           "primaryKey": false,
           "notNull": false
         },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
         "metadata": {
           "name": "metadata",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
-        "status": {
-          "name": "status",
-          "type": "auth_token_status",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "task_id": {
-          "name": "task_id",
+        "session_state_id": {
+          "name": "session_state_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
-        "ack_state": {
-          "name": "ack_state",
-          "type": "text",
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
           "primaryKey": false,
-          "notNull": false
-        },
-        "session_state": {
-          "name": "session_state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true,
+          "default": "now()"
         }
       },
       "indexes": {
@@ -113,56 +88,11 @@
           "method": "btree",
           "with": {}
         },
-        "auth_vault_expires_at_idx": {
-          "name": "auth_vault_expires_at_idx",
-          "columns": [
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "auth_vault_task_id_idx": {
-          "name": "auth_vault_task_id_idx",
-          "columns": [
-            {
-              "expression": "task_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "auth_vault_ack_state_idx": {
-          "name": "auth_vault_ack_state_idx",
-          "columns": [
-            {
-              "expression": "ack_state",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "auth_vault_session_state_idx": {
           "name": "auth_vault_session_state_idx",
           "columns": [
             {
-              "expression": "session_state",
+              "expression": "session_state_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

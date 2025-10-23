@@ -1,17 +1,18 @@
 import { NextRequest } from "next/server";
-import { validateRequest } from "@/lib/auth/validate-token";
+
 import {
   AuthManagerError,
   AuthManagerErrorDict,
-} from "@/lib/auth/vault-errors";
+} from "@/services/auth-manager/auth/vault-errors";
+import { validateRequest } from "@/services/auth-manager/auth/validate-token";
 import {
-  makeResponse,
+  makeAuthManagerOkResponse,
   makeAuthManagerError,
-  throwError,
-} from "@/lib/auth/response";
+  makeAuthManagerErrorResponse,
+} from "@/services/auth-manager/auth/response";
 
 /**
- * GET /api/auth/manager/validate-token
+ * GET /api/auth-manager/validate-token
  *
  * Validates the user's access token.
  */
@@ -20,12 +21,12 @@ export async function GET(request: NextRequest) {
     const validation = await validateRequest(request);
     if (!validation.valid) {
       return makeAuthManagerError(
-        new AuthManagerError(AuthManagerErrorDict.unauthorized.code)
+        new AuthManagerError(AuthManagerErrorDict.token_not_active.code)
       );
     }
 
-    return makeResponse({});
+    return makeAuthManagerOkResponse({});
   } catch (error) {
-    return throwError(error);
+    return makeAuthManagerErrorResponse(error);
   }
 }
